@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+
+<html lang="pt-br">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <title>Estoque ERP — Lançamento de Caixa</title>
+
+    <link rel="stylesheet" href="estoque.css">
+
+</head>
+
+<body>
+
+
+
+<button class="btn-voltar" onclick="voltarPagina()" title="Voltar">
+
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+
+    <line x1="19" y1="12" x2="5" y2="12"></line>
+
+    <polyline points="12 19 5 12 12 5"></polyline>
+
+  </svg>
+
+  Voltar
+
+</button>
+
+
+
+<header>
+
+    <div>📦 ERP Estoque <span id="syncLabel" class="status-sync">...</span></div>
+
+    <div class="hamburger" id="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
+
+    <nav class="menu" id="menu">
+
+        <a href="dashboard.html" class="menu-link" onclick="fecharMenuDropdown()">📊 Dashboard</a>
+
+        <a href="lancamento.html" class="menu-link" onclick="fecharMenuDropdown()">📝 Lançamento de Caixa</a>
+
+        <a href="index.html" class="menu-link" onclick="fecharMenuDropdown()">📋 Lista de Caixas</a>
+
+        <a href="avulsas.html" class="menu-link" onclick="fecharMenuDropdown()">📦 Gestão de Avulsas</a>
+
+        <a href="mapa.html" class="menu-link" onclick="fecharMenuDropdown()">🗺️ Mapa de Prateleiras</a>
+
+        <a href="config.html" class="menu-link" onclick="fecharMenuDropdown()">⚙️ Config. Prateleiras</a>
+
+        <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
+
+        <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+
+        <hr>
+
+        <button type="button" onclick="selecionarPasta()">📂 Alterar Pasta</button>
+
+    </nav>
+
+</header>
+
+
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados">
+
+    <span id="barraReconectarTexto"></span>
+
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+
+</div>
+
+
+
+<div class="container">
+
+    <div id="lancamentoTela">
+
+        <h2>📝 Lançamento de Caixa</h2>
+
+        <p class="lancamento-intro">Você pode registrar uma <strong>caixa avulsa</strong> (sem prateleira) ou alocar em uma prateleira pelo mapa. <strong>Eliminada</strong> não ocupa prateleira. Caixas em prateleira precisam de um espaço livre no mapa.</p>
+
+
+
+        <form id="cadastroForm" onsubmit="salvar(event)">
+
+            <div class="card">
+
+                <div class="lancamento-secao">
+
+                    <h3>1 · Identificação e prazos</h3>
+
+                    <div class="lancamento-grid">
+
+                        <div class="campo">
+
+                            <label for="caixa">Número da caixa</label>
+
+                            <input id="caixa" placeholder="Ex.: 2024-001" required autocomplete="off">
+
+                        </div>
+
+                        <div class="campo">
+
+                            <label for="unidadeSelect">Unidade</label>
+
+                            <select id="unidadeSelect">
+
+                                <option value="">— Não informada —</option>
+
+                            </select>
+
+                        </div>
+
+                        <div class="campo">
+
+                            <label for="inicio">Data de início</label>
+
+                            <input type="date" id="inicio" required title="Data de início do conteúdo">
+
+                        </div>
+
+                        <div class="campo">
+
+                            <label for="fim">Data fim <span style="font-weight:normal;color:#888">(opcional)</span></label>
+
+                            <input type="date" id="fim" title="Data fim">
+
+                        </div>
+
+                        <div class="campo">
+
+                            <label for="validade">Validade</label>
+
+                            <input type="date" id="validade" required title="Data de validade">
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="lancamento-secao">
+
+                    <h3>2 · Prateleira (opcional) e posição</h3>
+
+                    <div class="alerta-status-lanc" id="alertaStatusLanc" style="display:none;margin:8px 0;padding:10px;border-radius:6px;background:#fdedec;color:#922b21;font-size:13px;"></div>
+
+                    <div class="campo" style="max-width:420px;">
+
+                        <label for="prateleiraSelect">Prateleira</label>
+
+                        <select id="prateleiraSelect" onchange="onPrateleiraLancamentoChange()">
+
+                            <option value="">— Caixa avulsa (sem prateleira) —</option>
+
+                        </select>
+
+                    </div>
+
+                    <p id="mapaLancamentoPlaceholder" class="mapaLegendaLanc" style="margin-top:8px;">Selecione uma prateleira para ver o mapa ou deixe em branco para caixa avulsa.</p>
+
+                    <div id="mapaLancamento"></div>
+
+                    <input type="hidden" id="nivel" value="">
+
+                    <input type="hidden" id="espaco" value="">
+
+                    <div id="posicaoLancamentoResumo" class="posicaoResumo vazio" role="status">Nenhuma posição selecionada — clique em um espaço <strong>verde</strong> no mapa.</div>
+
+                </div>
+
+
+
+                <div class="lancamento-secao">
+
+                    <h3>3 · Situação e responsável</h3>
+
+                    <div class="lancamento-grid">
+
+                        <div class="campo">
+
+                            <label for="status">Status</label>
+
+                            <select id="status" onchange="onStatusLancamentoChange()">
+
+                                <option value="Avulsa">Avulsa</option>
+
+                                <option value="Guardada">Guardada</option>
+
+                                <option value="Preparada">Preparada</option>
+
+                                <option value="Digitalizada">Digitalizada</option>
+
+                                <option value="Eliminada">Eliminada</option>
+
+                            </select>
+
+                        </div>
+
+                        <div class="campo">
+
+                            <label for="usuarioStatus">Responsável</label>
+
+                            <input id="usuarioStatus" placeholder="Nome do responsável" autocomplete="name">
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+
+                <div class="lancamento-secao">
+
+                    <h3>4 · Processos vinculados</h3>
+
+                    <p style="margin:0 0 8px 0;font-size:13px;color:#666;">Marque um ou mais processos que se aplicam a esta caixa.</p>
+
+                    <div id="processosContainer"></div>
+
+                </div>
+
+
+
+                <div class="lancamento-acoes">
+
+                    <button type="submit" id="btnSalvar">Salvar</button>
+
+                    <button type="button" id="btnCancelar" style="display:none;background:#95a5a6" onclick="cancelarEdicao()">Cancelar edição</button>
+
+                    <span id="msgLancamentoOk">✓ Salvo. Você pode lançar outra caixa.</span>
+
+                </div>
+
+            </div>
+
+        </form>
+
+    </div>
+
+</div>
+
+
+
+<div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
+
+
+
+<script>window.ERP_PAGE_ID = "lancamento";</script>
+
+<script src="estoque-app.js"></script>
+
+</body>
+
+</html>

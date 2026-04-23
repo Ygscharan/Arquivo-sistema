@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque ERP — Config. Prateleiras</title>
+    <link rel="stylesheet" href="estoque.css">
+</head>
+<body>
+
+<button class="btn-voltar" onclick="voltarPagina()" title="Voltar">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="19" y1="12" x2="5" y2="12"></line>
+    <polyline points="12 19 5 12 12 5"></polyline>
+  </svg>
+  Voltar
+</button>
+
+<header>
+    <div>📦 ERP Estoque <span id="syncLabel" class="status-sync">...</span></div>
+    <div class="hamburger" id="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
+    <nav class="menu" id="menu">
+        <a href="dashboard.html" class="menu-link" onclick="fecharMenuDropdown()">📊 Dashboard</a>
+        <a href="lancamento.html" class="menu-link" onclick="fecharMenuDropdown()">📝 Lançamento de Caixa</a>
+        <a href="index.html" class="menu-link" onclick="fecharMenuDropdown()">📋 Lista de Caixas</a>
+        <a href="avulsas.html" class="menu-link" onclick="fecharMenuDropdown()">📦 Gestão de Avulsas</a>
+        <a href="mapa.html" class="menu-link" onclick="fecharMenuDropdown()">🗺️ Mapa de Prateleiras</a>
+        <a href="config.html" class="menu-link" onclick="fecharMenuDropdown()">⚙️ Config. Prateleiras</a>
+        <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
+        <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+        <hr>
+        <button type="button" onclick="selecionarPasta()">📂 Alterar Pasta</button>
+    </nav>
+</header>
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados">
+    <span id="barraReconectarTexto"></span>
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+</div>
+
+<div class="container">
+    <div id="configTela">
+        <h2>⚙️ Gerenciar Estrutura</h2>
+        
+        <div class="card">
+            <h3>Nova Prateleira</h3>
+            <p><small>Cada prateleira terá automaticamente 13 níveis com 6 espaços (Capacidade: 78 caixas).</small></p>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input id="nomePrateleiraNova" placeholder="Nome (Ex: Setor A)" style="flex: 1; margin: 0;">
+                <button onclick="adicionarPrateleira()">Cadastrar Prateleira</button>
+            </div>
+        </div>
+
+        <div class="card" style="padding: 15px; display: flex; align-items: center; gap: 15px;">
+            <label for="buscarPratConfig" style="font-weight: bold; color: #2c3e50; margin: 0;">🔍 Buscar Prateleira:</label>
+            <input type="text" id="buscarPratConfig" placeholder="Digite o nome da prateleira..." onkeyup="paginaAtualConfigPrat=1; renderConfigPrateleiras()" style="flex: 1; margin: 0; padding: 8px;">
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Ocupação</th>
+                    <th style="width: 120px;">Ações</th>
+                </tr>
+            </thead>
+            <tbody id="listaPrateleirasConfig"></tbody>
+        </table>
+        </div>
+</div>
+
+<div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
+
+<script>window.ERP_PAGE_ID = "config";</script>
+<script src="estoque-app.js"></script>
+</body>
+</html>

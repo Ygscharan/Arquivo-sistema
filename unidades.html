@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque ERP — Unidades</title>
+    <link rel="stylesheet" href="estoque.css">
+</head>
+<body>
+
+<button class="btn-voltar" onclick="voltarPagina()" title="Voltar">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="19" y1="12" x2="5" y2="12"></line>
+    <polyline points="12 19 5 12 12 5"></polyline>
+  </svg>
+  Voltar
+</button>
+
+<header>
+    <div>📦 ERP Estoque <span id="syncLabel" class="status-sync">...</span></div>
+    <div class="hamburger" id="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
+    <nav class="menu" id="menu">
+        <a href="dashboard.html" class="menu-link" onclick="fecharMenuDropdown()">📊 Dashboard</a>
+        <a href="lancamento.html" class="menu-link" onclick="fecharMenuDropdown()">📝 Lançamento de Caixa</a>
+        <a href="index.html" class="menu-link" onclick="fecharMenuDropdown()">📋 Lista de Caixas</a>
+        <a href="avulsas.html" class="menu-link" onclick="fecharMenuDropdown()">📦 Gestão de Avulsas</a>
+        <a href="mapa.html" class="menu-link" onclick="fecharMenuDropdown()">🗺️ Mapa de Prateleiras</a>
+        <a href="config.html" class="menu-link" onclick="fecharMenuDropdown()">⚙️ Config. Prateleiras</a>
+        <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
+        <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+        <hr>
+        <button type="button" onclick="selecionarPasta()">📂 Alterar Pasta</button>
+    </nav>
+</header>
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados">
+    <span id="barraReconectarTexto"></span>
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+</div>
+
+<div class="container">
+    <div id="unidadeTela">
+        <h2>🏢 Gerenciar Unidades</h2>
+        <div class="card">
+            <h3>Nova unidade</h3>
+            <p><small>Cadastre unidades organizacionais (setor, filial, departamento etc.) para vincular às caixas.</small></p>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <input type="number" id="numeroUnidadeNova" placeholder="Nº (Ex: 10)" style="width: 120px;">
+                <input type="text" id="nomeUnidadeNova" placeholder="Nome (Ex: Matriz · RH)" style="flex: 1;">
+            </div>
+            
+            <button onclick="adicionarUnidade()">Cadastrar unidade</button>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 80px;">Número</th>
+                    <th>Unidade</th>
+                    <th style="width: 100px;">Ações</th>
+                </tr>
+            </thead>
+            <tbody id="listaUnidadesConfig"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
+
+<script>window.ERP_PAGE_ID = "unidades";</script>
+<script src="estoque-app.js"></script>
+</body>
+</html>

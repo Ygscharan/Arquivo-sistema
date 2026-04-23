@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque ERP — Lista de Caixas</title>
+    <link rel="stylesheet" href="estoque.css">
+</head>
+<body>
+
+<header>
+    <div>📦 ERP Estoque <span id="syncLabel" class="status-sync">...</span></div>
+    <div class="hamburger" id="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
+    <nav class="menu" id="menu">
+        <a href="dashboard.html" class="menu-link" onclick="fecharMenuDropdown()">📊 Dashboard</a>
+        <a href="lancamento.html" class="menu-link" onclick="fecharMenuDropdown()">📝 Lançamento de Caixa</a>
+        <a href="index.html" class="menu-link" onclick="fecharMenuDropdown()">📋 Lista de Caixas</a>
+        <a href="avulsas.html" class="menu-link" onclick="fecharMenuDropdown()">📦 Gestão de Avulsas</a>
+        <a href="mapa.html" class="menu-link" onclick="fecharMenuDropdown()">🗺️ Mapa de Prateleiras</a>
+        <a href="config.html" class="menu-link" onclick="fecharMenuDropdown()">⚙️ Config. Prateleiras</a>
+        <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
+        <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+        <hr>
+        <button type="button" onclick="selecionarPasta()">📂 Alterar Pasta</button>
+    </nav>
+</header>
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados">
+    <span id="barraReconectarTexto"></span>
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+</div>
+
+<div class="container">
+    <div id="listaTela">
+        <h2>📋 Lista de Caixas</h2>
+        <div class="card">
+    <h3 style="margin-top: 0; color: #2c3e50; font-size: 15px; border-bottom: 1px solid #ecf0f1; padding-bottom: 8px;">🔍 Filtros de Busca</h3>
+    <div class="filter-grid">
+        <div class="filter-field">
+            <label for="buscarCaixa">Número da Caixa:</label>
+            <input type="text" id="buscarCaixa" placeholder="Ex: CX-001..." onkeyup="buscarCaixa()">
+        </div>
+        
+        <div class="filter-field">
+            <label for="filtroUnidadeLista">Unidade:</label>
+            <select id="filtroUnidadeLista" onchange="buscarCaixa()">
+                <option value="">— Todas as Unidades —</option>
+                </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="filtroStatusLista">Status da Caixa:</label>
+            <select id="filtroStatusLista" onchange="buscarCaixa()">
+                <option value="">— Todos os Status —</option>
+                <option value="Guardada">Guardada</option>
+                <option value="Avulsa">Avulsa</option>
+                <option value="Preparada">Preparada</option>
+                <option value="Digitalizada">Digitalizada</option>
+                <option value="Eliminada">Eliminada</option>
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="filtroProcessoLista">Processo:</label>
+            <select id="filtroProcessoLista" onchange="buscarCaixa()">
+                <option value="">— Todos os Processos —</option>
+                </select>
+        </div>
+
+        <div class="filter-field">
+            <label for="filtroResponsavelLista">Responsável:</label>
+            <input type="text" id="filtroResponsavelLista" placeholder="Nome do usuário..." onkeyup="buscarCaixa()">
+        </div>
+    </div>
+</div>
+        <table>
+            <thead><tr><th>Caixa</th><th>Unidade</th><th>Processos</th><th>Status</th><th>Endereço</th><th>Ações</th></tr></thead>
+            <tbody id="lista"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
+
+<script>window.ERP_PAGE_ID = "index";</script>
+<script src="estoque-app.js"></script>
+</body>
+</html>

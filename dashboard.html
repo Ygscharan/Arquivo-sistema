@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque ERP — Dashboard</title>
+    <link rel="stylesheet" href="estoque.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<button class="btn-voltar" onclick="voltarPagina()" title="Voltar">
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="19" y1="12" x2="5" y2="12"></line>
+    <polyline points="12 19 5 12 12 5"></polyline>
+  </svg>
+  Voltar
+</button>
+
+<header>
+    <div>📦 ERP Estoque <span id="syncLabel" class="status-sync">...</span></div>
+    <div class="hamburger" id="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
+    <nav class="menu" id="menu">
+        <a href="dashboard.html" class="menu-link" onclick="fecharMenuDropdown()">📊 Dashboard</a>
+        <a href="lancamento.html" class="menu-link" onclick="fecharMenuDropdown()">📝 Lançamento de Caixa</a>
+        <a href="index.html" class="menu-link" onclick="fecharMenuDropdown()">📋 Lista de Caixas</a>
+        <a href="avulsas.html" class="menu-link" onclick="fecharMenuDropdown()">📦 Gestão de Avulsas</a>
+        <a href="mapa.html" class="menu-link" onclick="fecharMenuDropdown()">🗺️ Mapa de Prateleiras</a>
+        <a href="config.html" class="menu-link" onclick="fecharMenuDropdown()">⚙️ Config. Prateleiras</a>
+        <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
+        <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+        <hr>
+        <button type="button" onclick="selecionarPasta()">📂 Alterar Pasta</button>
+    </nav>
+</header>
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados">
+    <span id="barraReconectarTexto"></span>
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+</div>
+
+<div class="container">
+    <div id="dashboardTela">
+        <h2>📊 Dashboard analítico</h2>
+        <p style="color:#555;font-size:14px;margin:0 0 12px 0;">Filtre as caixas, acompanhe indicadores e monte gráficos com o tipo e a dimensão que fizerem sentido para você.</p>
+
+        <div class="card dashboard-filtros">
+            <h3>🔍 Filtros</h3>
+            <div class="filter-grid">
+                <div class="filter-field">
+                    <label for="dashBusca">Busca (caixa, unidade ou responsável)</label>
+                    <input type="text" id="dashBusca" placeholder="Ex.: 123, RH ou Maria">
+                </div>
+                <div class="filter-field">
+                    <label for="dashFiltroRapido">Filtro rápido por validade</label>
+                    <select id="dashFiltroRapido">
+                        <option value="">Nenhum</option>
+                        <option value="vencidas">Somente vencidas (validade &lt; hoje)</option>
+                        <option value="vence30">Vence nos próximos 30 dias</option>
+                        <option value="vence90">Vence nos próximos 90 dias</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="dashValidadeDe">Validade — de</label>
+                    <input type="date" id="dashValidadeDe">
+                </div>
+                <div class="filter-field">
+                    <label for="dashValidadeAte">Validade — até</label>
+                    <input type="date" id="dashValidadeAte">
+                </div>
+                <div class="filter-field">
+                    <label for="dashInicioDe">Início — de</label>
+                    <input type="date" id="dashInicioDe">
+                </div>
+                <div class="filter-field">
+                    <label for="dashInicioAte">Início — até</label>
+                    <input type="date" id="dashInicioAte">
+                </div>
+                <div class="filter-field">
+                    <label for="dashPrateleira">Prateleira</label>
+                    <select id="dashPrateleira">
+                        <option value="">Todas as prateleiras</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="dashUnidade">Unidade</label>
+                    <select id="dashUnidade">
+                        <option value="">Todas as unidades</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="dashProcesso">Processos <small style="font-weight:normal;color:#888">(Ctrl+clique para vários; vazio = todos)</small></label>
+                    <select id="dashProcesso" multiple size="5"></select>
+                </div>
+            </div>
+            <div class="filter-field" style="margin-top:14px;">
+                <label>Status</label>
+                <div class="filter-status-row" id="dashFiltroStatus">
+                    <label><input type="checkbox" name="dashSt" value="Guardada" checked> Guardada</label>
+                    <label><input type="checkbox" name="dashSt" value="Avulsa" checked> Avulsa</label>
+                    <label><input type="checkbox" name="dashSt" value="Preparada" checked> Preparada</label>
+                    <label><input type="checkbox" name="dashSt" value="Digitalizada" checked> Digitalizada</label>
+                    <label><input type="checkbox" name="dashSt" value="Eliminada" checked> Eliminada</label>
+                </div>
+            </div>
+            <div class="dash-toolbar">
+                <button type="button" onclick="aplicarFiltrosDashboard()">Aplicar filtros</button>
+                <button type="button" style="background:#95a5a6" onclick="limparFiltrosDashboard()">Limpar filtros</button>
+            </div>
+        </div>
+
+        <div class="dashboard-kpis" id="dashboardKpis"></div>
+
+        <div class="dashboard-charts">
+            <div class="card chart-card">
+                <h4>Gráfico A</h4>
+                <div class="chart-controls">
+                    <label>Dimensão <select id="dashDim1">
+                        <option value="status">Por status</option>
+                        <option value="prateleira">Por prateleira</option>
+                        <option value="processo">Por processo (top 12)</option>
+                        <option value="nivel">Por nível (1–13)</option>
+                        <option value="usuario">Por responsável</option>
+                        <option value="unidade">Por unidade</option>
+                        <option value="mes_validade">Por mês da validade</option>
+                        <option value="mes_inicio">Por mês de início</option>
+                    </select></label>
+                    <label>Tipo <select id="dashTipo1">
+                        <option value="bar">Barras</option>
+                        <option value="pie">Pizza</option>
+                        <option value="doughnut">Rosca</option>
+                        <option value="line">Linha</option>
+                        <option value="polarArea">Área polar</option>
+                    </select></label>
+                </div>
+                <div class="chart-wrap"><canvas id="chartDashboard1"></canvas></div>
+            </div>
+            <div class="card chart-card">
+                <h4>Gráfico B</h4>
+                <div class="chart-controls">
+                    <label>Dimensão <select id="dashDim2">
+                        <option value="prateleira">Por prateleira</option>
+                        <option value="status">Por status</option>
+                        <option value="processo">Por processo (top 12)</option>
+                        <option value="nivel">Por nível (1–13)</option>
+                        <option value="usuario">Por responsável</option>
+                        <option value="unidade">Por unidade</option>
+                        <option value="mes_validade">Por mês da validade</option>
+                        <option value="mes_inicio">Por mês de início</option>
+                    </select></label>
+                    <label>Tipo <select id="dashTipo2">
+                        <option value="doughnut">Rosca</option>
+                        <option value="bar">Barras</option>
+                        <option value="pie">Pizza</option>
+                        <option value="line">Linha</option>
+                        <option value="polarArea">Área polar</option>
+                    </select></label>
+                </div>
+                <div class="chart-wrap"><canvas id="chartDashboard2"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
+
+<script>window.ERP_PAGE_ID = "dashboard";</script>
+<script src="estoque-app.js"></script>
+</body>
+</html>
