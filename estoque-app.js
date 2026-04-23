@@ -673,7 +673,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             el.textContent = "Posição selecionada: nível " + n + ", espaço " + e;
             el.classList.remove("vazio");
         } else {
-            el.innerHTML = "Escolha um espaço <strong>verde</strong> no mapa desta prateleira.";
+            el.innerHTML = "Escolha um espaço <strong>cinza</strong> no mapa desta prateleira.";
             el.classList.add("vazio");
         }
     }
