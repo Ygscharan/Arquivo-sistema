@@ -55,6 +55,7 @@
         <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
 
         <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+        <a href="responsaveis.html" class="menu-link" onclick="fecharMenuDropdown()">👥 Gerenciar Responsáveis</a>
 
         <hr>
 
@@ -209,8 +210,8 @@
                         <div class="campo">
 
                             <label for="usuarioStatus">Responsável</label>
-
-                            <input id="usuarioStatus" placeholder="Nome do responsável" autocomplete="name">
+                            <input id="usuarioStatus" list="listaResponsaveis" placeholder="Nome do responsável" autocomplete="name">
+                            <datalist id="listaResponsaveis"></datalist>
 
                         </div>
 

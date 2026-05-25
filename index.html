@@ -19,6 +19,7 @@
         <a href="config.html" class="menu-link" onclick="fecharMenuDropdown()">⚙️ Config. Prateleiras</a>
         <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
         <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+        <a href="responsaveis.html" class="menu-link" onclick="fecharMenuDropdown()">👥 Gerenciar Responsáveis</a>
         <hr>
         <button type="button" onclick="selecionarPasta()">📂 Alterar Pasta</button>
     </nav>
@@ -50,7 +51,7 @@
 
         <div class="filter-field">
             <label for="filtroStatusLista">Status da Caixa:</label>
-            <select id="filtroStatusLista" onchange="buscarCaixa()">
+            <select id="filtroStatusLista" onchange="onChangeFiltroStatusLista()">
                 <option value="">— Todos os Status —</option>
                 <option value="Guardada">Guardada</option>
                 <option value="Avulsa">Avulsa</option>
@@ -69,7 +70,8 @@
 
         <div class="filter-field">
             <label for="filtroResponsavelLista">Responsável:</label>
-            <input type="text" id="filtroResponsavelLista" placeholder="Nome do usuário..." onkeyup="buscarCaixa()">
+            <input type="text" id="filtroResponsavelLista" list="listaResponsaveisFiltro" placeholder="Nome do responsável..." onkeyup="buscarCaixa()" onchange="buscarCaixa()">
+            <datalist id="listaResponsaveisFiltro"></datalist>
         </div>
     </div>
 </div>

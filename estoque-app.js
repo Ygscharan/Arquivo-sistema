@@ -241,9 +241,18 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
 
             if (texto !== lastHash) {
                 lastHash = texto;
-                db = texto ? JSON.parse(texto) : { caixas: [], prateleiras: [], processos: [], unidades: [] };
+                db = texto ? JSON.parse(texto) : { caixas: [], prateleiras: [], processos: [], unidades: [], responsaveis: [] };
                 if(!db.processos) db.processos = [];
                 if(!db.unidades) db.unidades = [];
+                if(!db.responsaveis) db.responsaveis = [];
+                
+                // Normaliza funções antigas para as novas "Preparador" e "Digitalizador"
+                db.responsaveis.forEach(r => {
+                    if (r.funcao === "Preparada") r.funcao = "Preparador";
+                    else if (r.funcao === "Digitalizada") r.funcao = "Digitalizador";
+                    else if (["Guardada", "Avulsa", "Eliminada"].includes(r.funcao)) r.funcao = ""; // Remove funções não mapeadas
+                });
+                
                 garantirHistoricoCaixas();
                 normalizarEliminadasELocaisAvulsos();
                 atualizarInterface();
@@ -347,6 +356,159 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         }
     }
 
+    // ---------------- GESTÃO DE RESPONSÁVEIS ----------------
+    function toggleCamposDigitalizador(funcao, login = '', usuario = '', senha = '') {
+        const divCampos = document.getElementById("camposDigitalizador");
+        if (divCampos) {
+            divCampos.style.display = funcao === 'Digitalizador' ? 'flex' : 'none';
+            if (funcao === 'Digitalizador') {
+                document.getElementById("loginRespNovo").value = login;
+                document.getElementById("usuarioRespNovo").value = usuario;
+                document.getElementById("senhaRespNovo").value = senha;
+            } else {
+                if(document.getElementById("loginRespNovo")) document.getElementById("loginRespNovo").value = "";
+                if(document.getElementById("usuarioRespNovo")) document.getElementById("usuarioRespNovo").value = "";
+                if(document.getElementById("senhaRespNovo")) document.getElementById("senhaRespNovo").value = "";
+            }
+        }
+    }
+
+    async function adicionarResponsavel(){
+        if(!db.responsaveis) db.responsaveis = [];
+
+        const elNome = document.getElementById("nomeRespNovo");
+        const elApelido = document.getElementById("apelidoRespNovo");
+        const elFuncao = document.getElementById("funcaoRespNova");
+        const elNomeEditando = document.getElementById("nomeRespEditando");
+
+        if(!elNome || !elApelido || !elFuncao) return alert("Erro: Elementos do responsável não encontrados.");
+
+        const nome = elNome.value.trim();
+        const apelido = elApelido.value.trim();
+        const funcao = elFuncao.value;
+        const nomeAntigo = elNomeEditando ? elNomeEditando.value : "";
+
+        if(!nome || !apelido) return alert("Preencha o nome completo e o apelido do responsável!");
+
+        const elLogin = document.getElementById("loginRespNovo");
+        const elUsuario = document.getElementById("usuarioRespNovo");
+        const elSenha = document.getElementById("senhaRespNovo");
+        
+        let login = "";
+        let usuario = "";
+        let senha = "";
+        
+        if (funcao === 'Digitalizador') {
+            login = elLogin ? elLogin.value.trim() : "";
+            usuario = elUsuario ? elUsuario.value.trim() : "";
+            senha = elSenha ? elSenha.value.trim() : "";
+            
+            if (!login || !usuario || !senha) {
+                return alert("Preencha login, usuário e senha para o Digitalizador!");
+            }
+        }
+
+        const jaExiste = db.responsaveis.some(r => (r.nome.toLowerCase() === nome.toLowerCase() || r.apelido.toLowerCase() === apelido.toLowerCase()) && r.nome !== nomeAntigo);
+        if(jaExiste) return alert("Este responsável (nome ou apelido) já existe!");
+
+        if (nomeAntigo) {
+            // Editando
+            const index = db.responsaveis.findIndex(r => r.nome === nomeAntigo);
+            if (index !== -1) {
+                db.responsaveis[index] = { nome, apelido, funcao, login, usuario, senha };
+                
+                // Atualizar caixas que tinham o nome antigo (opcional, mas recomendado)
+                if (db.caixas && nome !== nomeAntigo) {
+                    db.caixas.forEach(c => {
+                        if (c.usuario === nomeAntigo) c.usuario = nome;
+                        else if (c.usuario && c.usuario.includes(nomeAntigo)) c.usuario = c.usuario.replace(nomeAntigo, nome);
+                    });
+                }
+            }
+            if (document.getElementById("btnCadastrarResponsavel")) document.getElementById("btnCadastrarResponsavel").innerText = "Cadastrar responsável";
+            if (document.getElementById("btnCancelarEdicao")) document.getElementById("btnCancelarEdicao").style.display = "none";
+            if (elNomeEditando) elNomeEditando.value = "";
+        } else {
+            // Novo
+            db.responsaveis.push({ nome, apelido, funcao, login, usuario, senha });
+        }
+
+        await salvarDB();
+        
+        elNome.value = "";
+        elApelido.value = "";
+        elFuncao.value = "";
+        toggleCamposDigitalizador(""); // Reseta os campos
+        atualizarInterface();
+    }
+
+    function editarResponsavel(nome) {
+        const resp = db.responsaveis.find(r => r.nome === nome);
+        if (!resp) return;
+
+        const elNome = document.getElementById("nomeRespNovo");
+        const elApelido = document.getElementById("apelidoRespNovo");
+        const elFuncao = document.getElementById("funcaoRespNova");
+        const elNomeEditando = document.getElementById("nomeRespEditando");
+
+        if (elNome) elNome.value = resp.nome;
+        if (elApelido) elApelido.value = resp.apelido;
+        if (elFuncao) elFuncao.value = resp.funcao || "";
+        if (elNomeEditando) elNomeEditando.value = resp.nome;
+
+        toggleCamposDigitalizador(resp.funcao, resp.login || '', resp.usuario || '', resp.senha || '');
+
+        const btn = document.getElementById("btnCadastrarResponsavel");
+        if (btn) btn.innerText = "Salvar Alterações";
+        const btnCancel = document.getElementById("btnCancelarEdicao");
+        if (btnCancel) btnCancel.style.display = "inline-block";
+        
+        // Rolar a tela para cima
+        window.scrollTo(0, 0);
+    }
+    
+    function cancelarEdicaoResponsavel() {
+        document.getElementById("nomeRespNovo").value = "";
+        document.getElementById("apelidoRespNovo").value = "";
+        document.getElementById("funcaoRespNova").value = "";
+        document.getElementById("nomeRespEditando").value = "";
+        
+        toggleCamposDigitalizador("");
+        
+        document.getElementById("btnCadastrarResponsavel").innerText = "Cadastrar responsável";
+        document.getElementById("btnCancelarEdicao").style.display = "none";
+    }
+
+    async function excluirResponsavel(nome){
+        if(db.caixas.some(c => c.usuario && (c.usuario === nome || c.usuario.includes(nome))))
+            return alert("Não é possível excluir: existem caixas vinculadas a este responsável!");
+
+        if(confirm(`Excluir o responsável ${nome}?`)){
+            db.responsaveis = db.responsaveis.filter(r => r.nome !== nome && r.apelido !== nome);
+            await salvarDB();
+            atualizarInterface();
+        }
+    }
+
+    function renderConfigResponsaveis(){
+        const lista = document.getElementById("listaResponsaveisConfig");
+        if(!lista) return;
+        lista.innerHTML = "";
+        (db.responsaveis || []).forEach(r => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${escModal(r.nome)}</td>
+                <td>${escModal(r.apelido)}</td>
+                <td>${escModal(r.funcao || "—")}</td>
+                <td class="td-acoes">
+                    <button class="btn-editar" onclick="editarResponsavel('${escModal(r.nome)}')">✏️ Editar</button>
+                    <button class="btn-excluir" onclick="excluirResponsavel('${escModal(r.nome)}')">🗑️ Excluir</button>
+                </td>
+            `;
+            lista.appendChild(tr);
+        });
+    }
+
     // ---------------- INTERFACE ----------------
     function atualizarInterface(){
         renderSelectPrateleiras();
@@ -355,12 +517,15 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         renderConfigProcessos();
         renderConfigUnidades();
         renderConfigPrateleiras();
+        renderConfigResponsaveis();
         preencherFiltrosListaCaixas();
         listar();
         if(document.getElementById("dashboardKpis")) atualizarDashboard();
         if(document.getElementById("listaAvulsas")) renderAvulsas();
         if(document.getElementById("mapaLancamento")) renderMapaLancamento();
         if(document.getElementById("mapa")) mapa();
+        atualizarOpcoesResponsavel();
+        atualizarOpcoesResponsavelLista();
     }
 
     function renderSelectPrateleiras(){
@@ -678,8 +843,81 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         }
     }
 
+    function atualizarOpcoesResponsavel(){
+        const dataList = document.getElementById("listaResponsaveis");
+        if(!dataList) return;
+        const st = document.getElementById("status") ? document.getElementById("status").value : "";
+        
+        let lista = [];
+        if(!db.responsaveis) db.responsaveis = [];
+        
+        if(st){
+            let funcaoAlvo = "";
+            if (st === "Preparada") funcaoAlvo = "Preparador";
+            else if (st === "Digitalizada") funcaoAlvo = "Digitalizador";
+            
+            if (funcaoAlvo) {
+                lista = db.responsaveis.filter(r => r.funcao === funcaoAlvo).map(r => r.nome);
+            }
+            if(lista.length === 0){
+                lista = db.responsaveis.map(r => r.nome);
+            }
+        } else {
+            lista = db.responsaveis.map(r => r.nome);
+        }
+        
+        // Remove duplicatas e ordena
+        lista = Array.from(new Set(lista)).sort();
+        
+        dataList.innerHTML = '';
+        lista.forEach(nome => {
+            const opt = document.createElement("option");
+            opt.value = nome;
+            dataList.appendChild(opt);
+        });
+    }
+
+    function atualizarOpcoesResponsavelLista(){
+        const dataList = document.getElementById("listaResponsaveisFiltro");
+        if(!dataList) return;
+        const st = document.getElementById("filtroStatusLista") ? document.getElementById("filtroStatusLista").value : "";
+        
+        let lista = [];
+        if(!db.responsaveis) db.responsaveis = [];
+        
+        if(st){
+            let funcaoAlvo = "";
+            if (st === "Preparada") funcaoAlvo = "Preparador";
+            else if (st === "Digitalizada") funcaoAlvo = "Digitalizador";
+            
+            if (funcaoAlvo) {
+                lista = db.responsaveis.filter(r => r.funcao === funcaoAlvo).map(r => r.nome);
+            }
+            if(lista.length === 0){
+                lista = db.responsaveis.map(r => r.nome);
+            }
+        } else {
+            lista = db.responsaveis.map(r => r.nome);
+        }
+        
+        lista = Array.from(new Set(lista)).sort();
+        
+        dataList.innerHTML = '';
+        lista.forEach(nome => {
+            const opt = document.createElement("option");
+            opt.value = nome;
+            dataList.appendChild(opt);
+        });
+    }
+
+    function onChangeFiltroStatusLista() {
+        atualizarOpcoesResponsavelLista();
+        buscarCaixa();
+    }
+
     function onStatusLancamentoChange(){
         esconderMsgLancamentoOk();
+        atualizarOpcoesResponsavel();
         const st = document.getElementById("status").value;
         const selPrat = document.getElementById("prateleiraSelect");
         const ph = document.getElementById("mapaLancamentoPlaceholder");
@@ -853,6 +1091,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         if(ph && !prat) ph.textContent = "Selecione uma prateleira para o mapa ou deixe em branco para caixa avulsa.";
         if(ph) ph.style.display = prat ? "none" : "block";
         renderMapaLancamento();
+        atualizarOpcoesResponsavel();
         const ok = document.getElementById("msgLancamentoOk");
         if(ok){
             ok.style.display = "inline";

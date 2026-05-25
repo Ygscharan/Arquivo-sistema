@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Estoque ERP — Caixas Avulsas</title>
+    <title>Estoque ERP — Responsáveis</title>
     <link rel="stylesheet" href="estoque.css">
 </head>
 <body>
@@ -40,25 +40,49 @@
 </div>
 
 <div class="container">
-    <div id="alocacaoAvulsaTela">
-        <h2>📦 Gestão de Caixas Avulsas</h2>
-        <p class="lancamento-intro">Estas são caixas cadastradas que ainda não possuem endereço físico nas prateleiras.</p>
-
-        <div class="dash-toolbar" style="margin-bottom: 20px;">
-            <button type="button" onclick="alocarTudoAutomatico()" style="background:#27ae60">🚀 Alocar Automaticamente Todas</button>
-            <button type="button" style="background:#34495e" onclick="gerarRelatorioLocalizacao()">📄 Gerar Relatório de Localização</button>
+    <div id="responsavelTela">
+        <h2>👥 Gerenciar Responsáveis</h2>
+        <div class="card">
+            <h3>Novo responsável</h3>
+            <p><small>Cadastre os funcionários/responsáveis que poderão ser selecionados no lançamento de caixas.</small></p>
+            
+            <div style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                <input type="text" id="nomeRespNovo" placeholder="Nome Completo (Ex: João da Silva)" style="flex: 2; min-width: 200px;">
+                <input type="text" id="apelidoRespNovo" placeholder="Apelido (Ex: João)" style="flex: 1; min-width: 150px;">
+                <select id="funcaoRespNova" style="flex: 1; min-width: 150px;" onchange="toggleCamposDigitalizador(this.value, '')">
+                    <option value="">— Função —</option>
+                    <option value="Preparador">Preparador</option>
+                    <option value="Digitalizador">Digitalizador</option>
+                </select>
+            </div>
+            
+            <div id="camposDigitalizador" style="display: none; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+                <input type="text" id="loginRespNovo" placeholder="Login (Ex: joaosilva)" style="flex: 1; min-width: 150px;">
+                <input type="text" id="usuarioRespNovo" placeholder="Usuário (Ex: J. Silva)" style="flex: 1; min-width: 150px;">
+                <input type="password" id="senhaRespNovo" placeholder="Senha (Ex: 123456)" style="flex: 1; min-width: 150px;">
+            </div>
+            
+            <button id="btnCadastrarResponsavel" onclick="adicionarResponsavel()">Cadastrar responsável</button>
+            <button id="btnCancelarEdicao" onclick="cancelarEdicaoResponsavel()" style="display: none; background-color: #6c757d;">Cancelar Edição</button>
+            <input type="hidden" id="nomeRespEditando" value="">
         </div>
-
         <table>
-            <thead><tr><th>Caixa</th><th>Unidade</th><th>Status</th><th>Ação Manual</th></tr></thead>
-            <tbody id="listaAvulsas"></tbody>
+            <thead>
+                <tr>
+                    <th>Nome Completo</th>
+                    <th>Apelido</th>
+                    <th>Função</th>
+                    <th style="width: 100px;">Ações</th>
+                </tr>
+            </thead>
+            <tbody id="listaResponsaveisConfig"></tbody>
         </table>
     </div>
 </div>
 
 <div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
 
-<script>window.ERP_PAGE_ID = "avulsas";</script>
+<script>window.ERP_PAGE_ID = "responsaveis";</script>
 <script src="estoque-app.js"></script>
 </body>
 </html>
