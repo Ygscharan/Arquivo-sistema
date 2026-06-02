@@ -43,70 +43,92 @@
 <div class="container">
     <div id="dashboardTela">
         <h2>📊 Dashboard analítico</h2>
-        <p style="color:#555;font-size:14px;margin:0 0 12px 0;">Filtre as caixas, acompanhe indicadores e monte gráficos com o tipo e a dimensão que fizerem sentido para você.</p>
+        <p style="color: #2c3e50; font-size: 16px; font-weight: 500; margin: 10px 0 20px 0; background: #eaf2f8; padding: 12px 16px; border-left: 4px solid #3498db; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); line-height: 1.5;">Filtre as caixas, acompanhe indicadores e monte gráficos com o tipo e a dimensão que fizerem sentido para você.</p>
 
         <div class="card dashboard-filtros">
-            <h3>🔍 Filtros</h3>
-            <div class="filter-grid">
-                <div class="filter-field">
-                    <label for="dashBusca">Busca (caixa, unidade ou responsável)</label>
-                    <input type="text" id="dashBusca" placeholder="Ex.: 123, RH ou Maria">
+            <div class="filtros-header">
+                <h3 style="border: none; padding: 0;">🔍 Filtros de Análise</h3>
+            </div>
+            
+            <div class="filter-section">
+                <h4 class="section-title">📌 Busca Principal e Status</h4>
+                <div class="filter-grid" style="grid-template-columns: 2fr 1fr; margin-top: 10px;">
+                    <div class="filter-field">
+                        <label for="dashBusca">Palavra-chave (Caixa, Unidade, Responsável)</label>
+                        <div class="input-icon">
+                            <span>🔍</span>
+                            <input type="text" id="dashBusca" placeholder="Ex.: 123, RH ou Maria">
+                        </div>
+                    </div>
+                    <div class="filter-field">
+                        <label for="dashFiltroRapido">Filtro Rápido (Validade)</label>
+                        <select id="dashFiltroRapido">
+                            <option value="">Nenhum (Todas)</option>
+                            <option value="vencidas">Somente vencidas (validade &lt; hoje)</option>
+                            <option value="vence30">Vence nos próximos 30 dias</option>
+                            <option value="vence90">Vence nos próximos 90 dias</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="filter-field">
-                    <label for="dashFiltroRapido">Filtro rápido por validade</label>
-                    <select id="dashFiltroRapido">
-                        <option value="">Nenhum</option>
-                        <option value="vencidas">Somente vencidas (validade &lt; hoje)</option>
-                        <option value="vence30">Vence nos próximos 30 dias</option>
-                        <option value="vence90">Vence nos próximos 90 dias</option>
-                    </select>
-                </div>
-                <div class="filter-field">
-                    <label for="dashValidadeDe">Validade — de</label>
-                    <input type="date" id="dashValidadeDe">
-                </div>
-                <div class="filter-field">
-                    <label for="dashValidadeAte">Validade — até</label>
-                    <input type="date" id="dashValidadeAte">
-                </div>
-                <div class="filter-field">
-                    <label for="dashInicioDe">Início — de</label>
-                    <input type="date" id="dashInicioDe">
-                </div>
-                <div class="filter-field">
-                    <label for="dashInicioAte">Início — até</label>
-                    <input type="date" id="dashInicioAte">
-                </div>
-                <div class="filter-field">
-                    <label for="dashPrateleira">Prateleira</label>
-                    <select id="dashPrateleira">
-                        <option value="">Todas as prateleiras</option>
-                    </select>
-                </div>
-                <div class="filter-field">
-                    <label for="dashUnidade">Unidade</label>
-                    <select id="dashUnidade">
-                        <option value="">Todas as unidades</option>
-                    </select>
-                </div>
-                <div class="filter-field">
-                    <label for="dashProcesso">Processos <small style="font-weight:normal;color:#888">(Ctrl+clique para vários; vazio = todos)</small></label>
-                    <select id="dashProcesso" multiple size="5"></select>
+                <div class="filter-field" style="margin-top: 15px;">
+                    <label>Situação da Caixa</label>
+                    <div class="filter-status-row" id="dashFiltroStatus">
+                        <label class="status-badge"><input type="checkbox" name="dashSt" value="Guardada" checked> Guardada</label>
+                        <label class="status-badge"><input type="checkbox" name="dashSt" value="Avulsa" checked> Avulsa</label>
+                        <label class="status-badge"><input type="checkbox" name="dashSt" value="Preparada" checked> Preparada</label>
+                        <label class="status-badge"><input type="checkbox" name="dashSt" value="Digitalizada" checked> Digitalizada</label>
+                        <label class="status-badge"><input type="checkbox" name="dashSt" value="Eliminada" checked> Eliminada</label>
+                    </div>
                 </div>
             </div>
-            <div class="filter-field" style="margin-top:14px;">
-                <label>Status</label>
-                <div class="filter-status-row" id="dashFiltroStatus">
-                    <label><input type="checkbox" name="dashSt" value="Guardada" checked> Guardada</label>
-                    <label><input type="checkbox" name="dashSt" value="Avulsa" checked> Avulsa</label>
-                    <label><input type="checkbox" name="dashSt" value="Preparada" checked> Preparada</label>
-                    <label><input type="checkbox" name="dashSt" value="Digitalizada" checked> Digitalizada</label>
-                    <label><input type="checkbox" name="dashSt" value="Eliminada" checked> Eliminada</label>
+
+            <div class="filter-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="document.getElementById('filtrosAvancados').classList.toggle('show-filters')" id="headerAvancado">
+                    <h4 class="section-title" style="margin: 0; border: none; padding: 0;">⚙️ Filtros Avançados (Datas, Local, Processos)</h4>
+                    <span style="font-size: 12px; color: #3498db; font-weight: bold;">(Clique para expandir/recolher)</span>
+                </div>
+                
+                <div id="filtrosAvancados" class="advanced-filters-content">
+                    <div class="filter-grid advanced" style="margin-top: 15px;">
+                        <div class="filter-field">
+                            <label for="dashValidadeDe">Validade — A partir de</label>
+                            <input type="date" id="dashValidadeDe">
+                        </div>
+                        <div class="filter-field">
+                            <label for="dashValidadeAte">Validade — Até</label>
+                            <input type="date" id="dashValidadeAte">
+                        </div>
+                        <div class="filter-field">
+                            <label for="dashInicioDe">Início — A partir de</label>
+                            <input type="date" id="dashInicioDe">
+                        </div>
+                        <div class="filter-field">
+                            <label for="dashInicioAte">Início — Até</label>
+                            <input type="date" id="dashInicioAte">
+                        </div>
+                        <div class="filter-field">
+                            <label for="dashPrateleira">Localização: Prateleira</label>
+                            <select id="dashPrateleira">
+                                <option value="">Todas as prateleiras</option>
+                            </select>
+                        </div>
+                        <div class="filter-field">
+                            <label for="dashUnidade">Localização: Unidade</label>
+                            <select id="dashUnidade">
+                                <option value="">Todas as unidades</option>
+                            </select>
+                        </div>
+                        <div class="filter-field" style="grid-column: span 2;">
+                            <label>Processos</label>
+                            <div id="dashProcesso" class="filter-status-row" style="max-height: 150px; overflow-y: auto; padding: 10px; border: 1px solid #ccc; border-radius: 4px; background: #fff;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
+
             <div class="dash-toolbar">
-                <button type="button" onclick="aplicarFiltrosDashboard()">Aplicar filtros</button>
-                <button type="button" style="background:#95a5a6" onclick="limparFiltrosDashboard()">Limpar filtros</button>
+                <button type="button" class="btn-limpar" onclick="limparFiltrosDashboard()">🗑️ Limpar Filtros</button>
+                <button type="button" class="btn-aplicar" onclick="aplicarFiltrosDashboard()">✅ Aplicar Filtros</button>
             </div>
         </div>
 

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque ERP — Login</title>
+    <link rel="stylesheet" href="estoque.css">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f6f8;
+            flex-direction: column;
+        }
+        .login-container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+        }
+        .login-container h2 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .login-form input {
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .login-form button {
+            padding: 12px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .login-form button:hover {
+            background-color: #2980b9;
+        }
+        .login-form button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        #loginError {
+            color: #e74c3c;
+            margin-top: 10px;
+            min-height: 20px;
+        }
+        #barraReconectarPasta {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+        }
+        .need-folder-msg {
+            margin-bottom: 20px;
+            color: #f39c12;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados" style="display: none;">
+    <span id="barraReconectarTexto"></span>
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+</div>
+
+<div class="login-container">
+    <h2>📦 ERP Estoque - Login</h2>
+    
+    <div id="folderWarning" class="need-folder-msg" style="display: none;">
+        ⚠️ Selecione a pasta de dados para fazer login.
+        <br><br>
+        <button type="button" class="btn-sec" onclick="selecionarPasta()" style="width: 100%;">📂 Escolher Pasta</button>
+    </div>
+
+    <form class="login-form" id="loginForm" onsubmit="realizarLogin(event)" style="display: none;">
+        <input type="text" id="loginUsername" placeholder="Login" required>
+        <input type="password" id="loginPassword" placeholder="Senha" required>
+        <button type="submit" id="loginBtn">Entrar</button>
+        <div id="loginError"></div>
+    </form>
+</div>
+
+<script>window.ERP_PAGE_ID = "login";</script>
+<script src="estoque-app.js"></script>
+</body>
+</html>

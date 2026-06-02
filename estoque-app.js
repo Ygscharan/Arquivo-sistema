@@ -156,12 +156,87 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     window.onload = async function(){
         if(ERP_PAGE_ID === "lancamento" && !new URLSearchParams(location.search).has("edit"))
             sessionStorage.removeItem("erpEditParam");
+        
         await inicializarPasta();
+
+        verificarAutenticacao();
+
         if(ERP_PAGE_ID === "dashboard") atualizarDashboard();
         if(ERP_PAGE_ID === "mapa") mapa();
         if(ERP_PAGE_ID === "avulsas") renderAvulsas();
+        
+        if (ERP_PAGE_ID === "login") {
+            atualizarTelaLogin();
+        }
+
         setInterval(async () => { if(pastaHandle && edit===null) await carregarDB(true); }, 5000);
     };
+
+    function verificarAutenticacao() {
+        // Se ainda não carregou o DB ou a pasta não foi selecionada, aguarda
+        if (!db || !db.responsaveis) return;
+        
+        // Se a página for de login, não redireciona para o login de novo
+        if (ERP_PAGE_ID === "login") return;
+
+        // Se o DB estiver vazio ou não tiver ninguém com login/senha cadastrado, pode liberar ou obrigar a cadastrar
+        const temUsuarioComSenha = db.responsaveis.some(r => r.login && r.senha);
+        
+        if (temUsuarioComSenha) {
+            const usuarioLogado = sessionStorage.getItem("usuarioLogado");
+            if (!usuarioLogado) {
+                window.location.href = "login.html";
+            }
+        }
+    }
+
+    function atualizarTelaLogin() {
+        const warning = document.getElementById("folderWarning");
+        const form = document.getElementById("loginForm");
+        
+        if (!pastaHandle) {
+            warning.style.display = "block";
+            form.style.display = "none";
+        } else {
+            warning.style.display = "none";
+            form.style.display = "flex";
+            
+            const temUsuarioComSenha = db.responsaveis && db.responsaveis.some(r => r.login && r.senha);
+            if (!temUsuarioComSenha && db.responsaveis) {
+                document.getElementById("loginError").innerHTML = "Nenhum usuário com login/senha cadastrado.<br>Acesso livre provisoriamente.";
+                document.getElementById("loginError").style.color = "#27ae60";
+                document.getElementById("loginBtn").innerText = "Entrar no Sistema";
+            }
+        }
+    }
+
+    function realizarLogin(event) {
+        event.preventDefault();
+        const user = document.getElementById("loginUsername").value.trim();
+        const pass = document.getElementById("loginPassword").value.trim();
+        const err = document.getElementById("loginError");
+        
+        const temUsuarioComSenha = db.responsaveis && db.responsaveis.some(r => r.login && r.senha);
+        
+        if (!temUsuarioComSenha) {
+            sessionStorage.setItem("usuarioLogado", "admin_provisorio");
+            window.location.href = "dashboard.html";
+            return;
+        }
+
+        const resp = db.responsaveis.find(r => r.login === user && r.senha === pass);
+        
+        if (resp) {
+            sessionStorage.setItem("usuarioLogado", JSON.stringify(resp));
+            if (resp.funcao === "Preparador Chefe") {
+                window.location.href = "preparacao.html";
+            } else {
+                window.location.href = "dashboard.html";
+            }
+        } else {
+            err.innerText = "Login ou senha incorretos!";
+        }
+    }
 
     function aplicarEdicaoSeNecessario(){
         const params = new URLSearchParams(location.search);
@@ -360,8 +435,9 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     function toggleCamposDigitalizador(funcao, login = '', usuario = '', senha = '') {
         const divCampos = document.getElementById("camposDigitalizador");
         if (divCampos) {
-            divCampos.style.display = funcao === 'Digitalizador' ? 'flex' : 'none';
-            if (funcao === 'Digitalizador') {
+            const needsLogin = ['Digitalizador', 'Preparador Chefe', 'Administrador'].includes(funcao);
+            divCampos.style.display = needsLogin ? 'flex' : 'none';
+            if (needsLogin) {
                 document.getElementById("loginRespNovo").value = login;
                 document.getElementById("usuarioRespNovo").value = usuario;
                 document.getElementById("senhaRespNovo").value = senha;
@@ -379,14 +455,12 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const elNome = document.getElementById("nomeRespNovo");
         const elApelido = document.getElementById("apelidoRespNovo");
         const elFuncao = document.getElementById("funcaoRespNova");
-        const elNomeEditando = document.getElementById("nomeRespEditando");
 
         if(!elNome || !elApelido || !elFuncao) return alert("Erro: Elementos do responsável não encontrados.");
 
         const nome = elNome.value.trim();
         const apelido = elApelido.value.trim();
         const funcao = elFuncao.value;
-        const nomeAntigo = elNomeEditando ? elNomeEditando.value : "";
 
         if(!nome || !apelido) return alert("Preencha o nome completo e o apelido do responsável!");
 
@@ -398,40 +472,20 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         let usuario = "";
         let senha = "";
         
-        if (funcao === 'Digitalizador') {
+        if (['Digitalizador', 'Preparador Chefe', 'Administrador'].includes(funcao)) {
             login = elLogin ? elLogin.value.trim() : "";
             usuario = elUsuario ? elUsuario.value.trim() : "";
             senha = elSenha ? elSenha.value.trim() : "";
             
             if (!login || !usuario || !senha) {
-                return alert("Preencha login, usuário e senha para o Digitalizador!");
+                return alert("Preencha login, usuário e senha para esta função!");
             }
         }
 
-        const jaExiste = db.responsaveis.some(r => (r.nome.toLowerCase() === nome.toLowerCase() || r.apelido.toLowerCase() === apelido.toLowerCase()) && r.nome !== nomeAntigo);
+        const jaExiste = db.responsaveis.some(r => (r.nome.toLowerCase() === nome.toLowerCase() || r.apelido.toLowerCase() === apelido.toLowerCase()));
         if(jaExiste) return alert("Este responsável (nome ou apelido) já existe!");
 
-        if (nomeAntigo) {
-            // Editando
-            const index = db.responsaveis.findIndex(r => r.nome === nomeAntigo);
-            if (index !== -1) {
-                db.responsaveis[index] = { nome, apelido, funcao, login, usuario, senha };
-                
-                // Atualizar caixas que tinham o nome antigo (opcional, mas recomendado)
-                if (db.caixas && nome !== nomeAntigo) {
-                    db.caixas.forEach(c => {
-                        if (c.usuario === nomeAntigo) c.usuario = nome;
-                        else if (c.usuario && c.usuario.includes(nomeAntigo)) c.usuario = c.usuario.replace(nomeAntigo, nome);
-                    });
-                }
-            }
-            if (document.getElementById("btnCadastrarResponsavel")) document.getElementById("btnCadastrarResponsavel").innerText = "Cadastrar responsável";
-            if (document.getElementById("btnCancelarEdicao")) document.getElementById("btnCancelarEdicao").style.display = "none";
-            if (elNomeEditando) elNomeEditando.value = "";
-        } else {
-            // Novo
-            db.responsaveis.push({ nome, apelido, funcao, login, usuario, senha });
-        }
+        db.responsaveis.push({ nome, apelido, funcao, login, usuario, senha });
 
         await salvarDB();
         
@@ -446,27 +500,104 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const resp = db.responsaveis.find(r => r.nome === nome);
         if (!resp) return;
 
-        const elNome = document.getElementById("nomeRespNovo");
-        const elApelido = document.getElementById("apelidoRespNovo");
-        const elFuncao = document.getElementById("funcaoRespNova");
-        const elNomeEditando = document.getElementById("nomeRespEditando");
+        const needsLogin = ['Digitalizador', 'Preparador Chefe', 'Administrador'].includes(resp.funcao);
 
-        if (elNome) elNome.value = resp.nome;
-        if (elApelido) elApelido.value = resp.apelido;
-        if (elFuncao) elFuncao.value = resp.funcao || "";
-        if (elNomeEditando) elNomeEditando.value = resp.nome;
+        const html = `
+        <div id="responsavelEditTela" style="max-height: 80vh; overflow-y: auto; overflow-x: hidden; text-align: left; padding: 20px; width: 600px; max-width: 95vw; box-sizing: border-box;">
+            <h2 style="margin-top:0; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">✏️ Editar Responsável</h2>
+            <div class="card" style="box-shadow:none; padding:0; background: transparent;">
+                <input type="hidden" id="nomeRespEditandoModal" value="${escModal(resp.nome)}">
+                
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Nome Completo</label>
+                    <input type="text" id="nomeRespEdit" value="${escModal(resp.nome)}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Apelido</label>
+                    <input type="text" id="apelidoRespEdit" value="${escModal(resp.apelido)}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Função</label>
+                    <select id="funcaoRespEdit" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" onchange="document.getElementById('camposDigitalizadorEdit').style.display = ['Digitalizador', 'Preparador Chefe', 'Administrador'].includes(this.value) ? 'flex' : 'none'">
+                        <option value="" ${!resp.funcao ? 'selected' : ''}>— Função —</option>
+                        <option value="Preparador" ${resp.funcao === 'Preparador' ? 'selected' : ''}>Preparador</option>
+                        <option value="Preparador Chefe" ${resp.funcao === 'Preparador Chefe' ? 'selected' : ''}>Preparador Chefe</option>
+                        <option value="Digitalizador" ${resp.funcao === 'Digitalizador' ? 'selected' : ''}>Digitalizador</option>
+                        <option value="Administrador" ${resp.funcao === 'Administrador' ? 'selected' : ''}>Administrador</option>
+                    </select>
+                </div>
+                
+                <div id="camposDigitalizadorEdit" style="display: ${needsLogin ? 'flex' : 'none'}; flex-direction: column; gap: 15px; margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 6px; border: 1px solid #eee;">
+                    <h4 style="margin: 0 0 5px 0; color: #333;">Acesso ao Sistema</h4>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Login</label>
+                        <input type="text" id="loginRespEdit" value="${escModal(resp.login || '')}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Usuário</label>
+                        <input type="text" id="usuarioRespEdit" value="${escModal(resp.usuario || '')}" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold; color: #555;">Senha</label>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <input type="password" id="senhaRespEdit" value="${escModal(resp.senha || '')}" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+                            <button type="button" class="btn-sec" onclick="const p = document.getElementById('senhaRespEdit'); p.type = p.type === 'password' ? 'text' : 'password';" style="padding: 8px 12px; margin: 0; white-space: nowrap;" title="Mostrar/Ocultar Senha">👁️</button>
+                        </div>
+                    </div>
+                </div>
 
-        toggleCamposDigitalizador(resp.funcao, resp.login || '', resp.usuario || '', resp.senha || '');
-
-        const btn = document.getElementById("btnCadastrarResponsavel");
-        if (btn) btn.innerText = "Salvar Alterações";
-        const btnCancel = document.getElementById("btnCancelarEdicao");
-        if (btnCancel) btnCancel.style.display = "inline-block";
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+                    <button type="button" class="btn-sec" onclick="fecharModal()">Cancelar</button>
+                    <button type="button" class="btn-prim" onclick="salvarEdicaoResponsavelModal()">Salvar Alterações</button>
+                </div>
+            </div>
+        </div>
+        `;
         
-        // Rolar a tela para cima
-        window.scrollTo(0, 0);
+        document.getElementById("modalConteudo").innerHTML = html;
+        document.getElementById("modalConteudo").classList.add("modal-wide");
+        document.getElementById("modal").style.display = "flex";
     }
-    
+
+    async function salvarEdicaoResponsavelModal() {
+        const nomeAntigo = document.getElementById("nomeRespEditandoModal").value;
+        const nome = document.getElementById("nomeRespEdit").value.trim();
+        const apelido = document.getElementById("apelidoRespEdit").value.trim();
+        const funcao = document.getElementById("funcaoRespEdit").value;
+        
+        if(!nome || !apelido) return alert("Preencha o nome completo e o apelido do responsável!");
+        
+        let login = "";
+        let usuario = "";
+        let senha = "";
+        
+        if (['Digitalizador', 'Preparador Chefe', 'Administrador'].includes(funcao)) {
+            login = document.getElementById("loginRespEdit").value.trim();
+            usuario = document.getElementById("usuarioRespEdit").value.trim();
+            senha = document.getElementById("senhaRespEdit").value.trim();
+            if (!login || !usuario || !senha) return alert("Preencha login, usuário e senha para esta função!");
+        }
+
+        const jaExiste = db.responsaveis.some(r => (r.nome.toLowerCase() === nome.toLowerCase() || r.apelido.toLowerCase() === apelido.toLowerCase()) && r.nome !== nomeAntigo);
+        if(jaExiste) return alert("Este responsável (nome ou apelido) já existe!");
+
+        const index = db.responsaveis.findIndex(r => r.nome === nomeAntigo);
+        if (index !== -1) {
+            db.responsaveis[index] = { nome, apelido, funcao, login, usuario, senha };
+            
+            if (db.caixas && nome !== nomeAntigo) {
+                db.caixas.forEach(c => {
+                    if (c.usuario === nomeAntigo) c.usuario = nome;
+                    else if (c.usuario && c.usuario.includes(nomeAntigo)) c.usuario = c.usuario.replace(nomeAntigo, nome);
+                });
+            }
+        }
+        
+        await salvarDB();
+        fecharModal();
+        atualizarInterface();
+    }
+
     function cancelarEdicaoResponsavel() {
         document.getElementById("nomeRespNovo").value = "";
         document.getElementById("apelidoRespNovo").value = "";
@@ -511,6 +642,11 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
 
     // ---------------- INTERFACE ----------------
     function atualizarInterface(){
+        verificarAutenticacao();
+        if (ERP_PAGE_ID === "login") {
+            atualizarTelaLogin();
+        }
+
         renderSelectPrateleiras();
         renderSelectUnidades();
         renderCheckboxesProcessos();
@@ -1066,6 +1202,12 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     }
 
     function limparAposSalvarSucesso(){
+        if(window.ERP_PAGE_ID === "index"){
+            fecharModal();
+            listar();
+            return;
+        }
+
         const prat = document.getElementById("prateleiraSelect").value;
         const unid = document.getElementById("unidadeSelect").value;
         edit = null;
@@ -1287,33 +1429,144 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     }
 
     function editar(i){
-        window.location.href = "lancamento.html?edit=" + encodeURIComponent(i);
+        if(window.ERP_PAGE_ID === "index") {
+            abrirModalEdicao(i);
+        } else {
+            window.location.href = "lancamento.html?edit=" + encodeURIComponent(i);
+        }
+    }
+
+    function abrirModalEdicao(i) {
+        const c = db.caixas[i];
+        if(!c) return;
+
+        const html = `
+        <div id="lancamentoTela" style="max-height: 80vh; overflow-y: auto; text-align: left; padding: 10px;">
+            <h2 style="margin-top:0;">📝 Editar Caixa: ${escModal(c.caixa)}</h2>
+            <form id="cadastroForm" onsubmit="salvar(event)">
+                <div class="card" style="box-shadow:none; padding:0;">
+                    <div class="lancamento-secao">
+                        <h3>1 · Identificação e prazos</h3>
+                        <div class="lancamento-grid">
+                            <div class="campo">
+                                <label for="caixa">Número da caixa</label>
+                                <input id="caixa" placeholder="Ex.: 2024-001" required autocomplete="off">
+                            </div>
+                            <div class="campo">
+                                <label for="unidadeSelect">Unidade</label>
+                                <select id="unidadeSelect">
+                                    <option value="">— Não informada —</option>
+                                </select>
+                            </div>
+                            <div class="campo">
+                                <label for="inicio">Data de início</label>
+                                <input type="date" id="inicio" required title="Data de início do conteúdo">
+                            </div>
+                            <div class="campo">
+                                <label for="fim">Data fim <span style="font-weight:normal;color:#888">(opcional)</span></label>
+                                <input type="date" id="fim" title="Data fim">
+                            </div>
+                            <div class="campo">
+                                <label for="validade">Validade</label>
+                                <input type="date" id="validade" required title="Data de validade">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lancamento-secao">
+                        <h3>2 · Prateleira (opcional) e posição</h3>
+                        <div class="alerta-status-lanc" id="alertaStatusLanc" style="display:none;margin:8px 0;padding:10px;border-radius:6px;background:#fdedec;color:#922b21;font-size:13px;"></div>
+                        <div class="campo" style="max-width:420px;">
+                            <label for="prateleiraSelect">Prateleira</label>
+                            <select id="prateleiraSelect" onchange="onPrateleiraLancamentoChange()">
+                                <option value="">— Caixa avulsa (sem prateleira) —</option>
+                            </select>
+                        </div>
+                        <p id="mapaLancamentoPlaceholder" class="mapaLegendaLanc" style="margin-top:8px;">Selecione uma prateleira para ver o mapa ou deixe em branco para caixa avulsa.</p>
+                        <div id="mapaLancamento"></div>
+                        <input type="hidden" id="nivel" value="">
+                        <input type="hidden" id="espaco" value="">
+                        <div id="posicaoLancamentoResumo" class="posicaoResumo vazio" role="status">Nenhuma posição selecionada — clique em um espaço <strong>Cinza</strong> no mapa.</div>
+                    </div>
+
+                    <div class="lancamento-secao">
+                        <h3>3 · Situação e responsável</h3>
+                        <div class="lancamento-grid">
+                            <div class="campo">
+                                <label for="status">Status</label>
+                                <select id="status" onchange="onStatusLancamentoChange()">
+                                    <option value="Avulsa">Avulsa</option>
+                                    <option value="Guardada">Guardada</option>
+                                    <option value="Preparada">Preparada</option>
+                                    <option value="Digitalizada">Digitalizada</option>
+                                    <option value="Eliminada">Eliminada</option>
+                                </select>
+                            </div>
+                            <div class="campo">
+                                <label for="usuarioStatus">Responsável</label>
+                                <input id="usuarioStatus" list="listaResponsaveis" placeholder="Nome do responsável" autocomplete="name">
+                                <datalist id="listaResponsaveis"></datalist>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="lancamento-secao">
+                        <h3>4 · Processos vinculados</h3>
+                        <div id="processosContainer"></div>
+                    </div>
+
+                    <div class="lancamento-acoes" style="justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                        <button type="button" class="btn-sec" id="btnCancelar" onclick="fecharModal()">Cancelar</button>
+                        <button type="submit" class="btn-prim" id="btnSalvar">Salvar Alterações</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        `;
+
+        const mb = document.querySelector("#modal .modalBox");
+        if(mb) mb.classList.add("modal-wide");
+        
+        document.getElementById("modalConteudo").innerHTML = html;
+        document.getElementById("modal").style.display = "flex";
+
+        renderSelectPrateleiras();
+        renderSelectUnidades();
+        renderCheckboxesProcessos();
+        atualizarOpcoesResponsavel();
+
+        preencherFormularioEdicao(i);
     }
 
     function preencherFormularioEdicao(i){
-        esconderMsgLancamentoOk();
+        if(typeof esconderMsgLancamentoOk === "function") esconderMsgLancamentoOk();
         const c = db.caixas[i];
         if(!c) return;
-        document.getElementById("caixa").value = c.caixa;
-        document.getElementById("unidadeSelect").value = c.unidade || "";
-        document.getElementById("inicio").value = c.inicio;
-        document.getElementById("fim").value = c.fim;
-        document.getElementById("validade").value = c.validade;
-        document.getElementById("prateleiraSelect").value = c.prateleira || "";
-        document.getElementById("nivel").value = (c.nivel && parseInt(c.nivel, 10) >= 1) ? c.nivel : "";
-        document.getElementById("espaco").value = (c.espaco && parseInt(c.espaco, 10) >= 1) ? c.espaco : "";
-        document.getElementById("status").value = c.status;
-        document.getElementById("usuarioStatus").value = c.usuario;
+        
+        const setVal = (id, val) => { const el = document.getElementById(id); if(el) el.value = val; };
+        
+        setVal("caixa", c.caixa);
+        setVal("unidadeSelect", c.unidade || "");
+        setVal("inicio", c.inicio);
+        setVal("fim", c.fim);
+        setVal("validade", c.validade);
+        setVal("prateleiraSelect", c.prateleira || "");
+        setVal("nivel", (c.nivel && parseInt(c.nivel, 10) >= 1) ? c.nivel : "");
+        setVal("espaco", (c.espaco && parseInt(c.espaco, 10) >= 1) ? c.espaco : "");
+        setVal("status", c.status);
+        setVal("usuarioStatus", c.usuario);
 
         document.querySelectorAll('input[name="procCheck"]').forEach(cb => {
             cb.checked = c.processos && c.processos.includes(cb.value);
         });
 
         edit = i;
-        document.getElementById("btnSalvar").innerText = "Atualizar";
-        document.getElementById("btnCancelar").style.display = "inline-block";
-        onStatusLancamentoChange();
-        window.scrollTo(0, 0);
+        const btnSalvar = document.getElementById("btnSalvar");
+        if(btnSalvar) btnSalvar.innerText = "Atualizar";
+        const btnCancelar = document.getElementById("btnCancelar");
+        if(btnCancelar) btnCancelar.style.display = "inline-block";
+        if(typeof onStatusLancamentoChange === "function") onStatusLancamentoChange();
+        if(window.ERP_PAGE_ID === "lancamento") window.scrollTo(0, 0);
     }
 
     function cancelarEdicao(){
@@ -1459,6 +1712,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         document.getElementById("modal").style.display = "none";
         const mb = document.querySelector("#modal .modalBox");
         if(mb) mb.classList.remove("modal-wide");
+        if(window.ERP_PAGE_ID === "index") edit = null;
     }
 
     function hojeISO(){
@@ -1512,21 +1766,25 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
 
         const selProc = document.getElementById("dashProcesso");
         if(!selProc) return;
-        const prev = dashProcessoInicializado ? [...selProc.selectedOptions].map(o => o.value) : null;
+        const prev = dashProcessoInicializado ? [...selProc.querySelectorAll('input[type="checkbox"]:checked')].map(o => o.value) : null;
         selProc.innerHTML = "";
         db.processos.forEach(n => {
-            const o = document.createElement("option");
-            o.value = n;
-            o.textContent = n;
-            selProc.appendChild(o);
+            const lbl = document.createElement("label");
+            lbl.className = "status-badge";
+            const chk = document.createElement("input");
+            chk.type = "checkbox";
+            chk.value = n;
+            lbl.appendChild(chk);
+            lbl.appendChild(document.createTextNode(" " + n));
+            selProc.appendChild(lbl);
         });
         if(!dashProcessoInicializado){
-            [...selProc.options].forEach(o => { o.selected = true; });
+            [...selProc.querySelectorAll('input[type="checkbox"]')].forEach(o => { o.checked = true; });
             dashProcessoInicializado = true;
         } else {
-            [...selProc.options].forEach(o => { o.selected = prev.includes(o.value); });
-            if([...selProc.options].every(o => !o.selected))
-                [...selProc.options].forEach(o => { o.selected = true; });
+            [...selProc.querySelectorAll('input[type="checkbox"]')].forEach(o => { o.checked = prev.includes(o.value); });
+            if([...selProc.querySelectorAll('input[type="checkbox"]')].every(o => !o.checked))
+                [...selProc.querySelectorAll('input[type="checkbox"]')].forEach(o => { o.checked = true; });
         }
     }
 
@@ -1539,7 +1797,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const ia = document.getElementById("dashInicioAte").value;
         const prat = document.getElementById("dashPrateleira").value;
         const procOpts = document.getElementById("dashProcesso");
-        const procSel = [...procOpts.selectedOptions].map(o => o.value);
+        const procSel = procOpts ? [...procOpts.querySelectorAll('input[type="checkbox"]:checked')].map(o => o.value) : [];
         const todosProcs = db.processos.length === 0 || procSel.length === 0 || procSel.length === db.processos.length;
         const statusChecks = [...document.querySelectorAll('input[name="dashSt"]:checked')].map(i => i.value);
         const todosStatus = statusChecks.length === 5;
@@ -1593,7 +1851,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         if(du) du.value = "";
         document.querySelectorAll('input[name="dashSt"]').forEach(i => { i.checked = true; });
         const sp = document.getElementById("dashProcesso");
-        [...sp.options].forEach(o => { o.selected = true; });
+        if(sp) [...sp.querySelectorAll('input[type="checkbox"]')].forEach(o => { o.checked = true; });
         renderDashboardDados();
     }
 
@@ -2192,4 +2450,79 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     function mudarPaginaConfigPrat(novaPagina) {
         paginaAtualConfigPrat = novaPagina;
         renderConfigPrateleiras();
+    }
+
+    // ---------------- PREPARAÇÃO DE CAIXAS (Preparador Chefe) ----------------
+    function atualizarTelaPreparacao() {
+        const selFunc = document.getElementById("prepFuncionarioSelect");
+        if (!selFunc) return;
+        
+        selFunc.innerHTML = '<option value="">— Selecione o Preparador —</option>';
+        if (db.responsaveis) {
+            const preparadores = db.responsaveis.filter(r => r.funcao === "Preparador").map(r => r.nome).sort();
+            preparadores.forEach(nome => {
+                const opt = document.createElement("option");
+                opt.value = nome;
+                opt.textContent = nome;
+                selFunc.appendChild(opt);
+            });
+        }
+    }
+
+    async function registrarCaixaPreparada(event) {
+        event.preventDefault();
+        const numCaixa = document.getElementById("prepCaixaNumero").value.trim();
+        const funcionario = document.getElementById("prepFuncionarioSelect").value;
+        const msg = document.getElementById("prepMensagem");
+        
+        if (!numCaixa || !funcionario) {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Preencha o número da caixa e o funcionário.";
+            return;
+        }
+
+        await carregarDB(true);
+
+        const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
+        
+        if (idx === -1) {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Caixa não encontrada no sistema!";
+            return;
+        }
+
+        const caixa = db.caixas[idx];
+        const antes = snapshotCaixaParaHistorico(caixa);
+
+        caixa.status = "Preparada";
+        caixa.usuario = funcionario;
+        caixa.dataUpdate = new Date().toLocaleString();
+
+        const mud = extrairMudancasRegistro(antes, caixa);
+        if (mud.length > 0) {
+            if (!Array.isArray(caixa.historico)) caixa.historico = [];
+            let registradoPor = "";
+            try {
+                const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
+                registradoPor = u.nome || "Preparador Chefe";
+            } catch(e) {}
+            
+            caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
+        }
+
+        await salvarDB();
+        
+        document.getElementById("prepCaixaNumero").value = "";
+        document.getElementById("prepCaixaNumero").focus();
+        
+        msg.style.color = "#27ae60";
+        msg.textContent = "Caixa " + caixa.caixa + " marcada como Preparada por " + funcionario + " com sucesso!";
+        
+        clearTimeout(window._prepMsgT);
+        window._prepMsgT = setTimeout(() => { msg.textContent = ""; }, 4500);
+    }
+
+    function logout() {
+        sessionStorage.removeItem("usuarioLogado");
+        window.location.href = "login.html";
     }

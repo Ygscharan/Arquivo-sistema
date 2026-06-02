@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque ERP — Preparação de Caixas</title>
+    <link rel="stylesheet" href="estoque.css">
+    <style>
+        .preparacao-container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .preparacao-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            text-align: left;
+            margin-top: 20px;
+        }
+        .preparacao-form label {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            display: block;
+        }
+        .preparacao-form input, .preparacao-form select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .preparacao-form button {
+            padding: 14px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .preparacao-form button:hover {
+            background-color: #219653;
+        }
+        #prepMensagem {
+            margin-top: 15px;
+            font-weight: bold;
+            min-height: 24px;
+        }
+    </style>
+</head>
+<body>
+
+<header style="justify-content: space-between;">
+    <div>📦 ERP Estoque <span id="syncLabel" class="status-sync">...</span></div>
+    <div>
+        <button type="button" class="btn-sec" style="margin: 0; padding: 6px 12px;" onclick="logout()">Sair</button>
+    </div>
+</header>
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados" style="display: none;">
+    <span id="barraReconectarTexto"></span>
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+</div>
+
+<div class="preparacao-container">
+    <h2 style="margin-top:0; color:#2c3e50;">✅ Registro de Preparação</h2>
+    <p style="color: #7f8c8d;">Informe a caixa e qual funcionário realizou a preparação.</p>
+
+    <form class="preparacao-form" onsubmit="registrarCaixaPreparada(event)">
+        <div>
+            <label for="prepFuncionarioSelect">Funcionário Preparador:</label>
+            <select id="prepFuncionarioSelect" required>
+                <option value="">— Selecione o Preparador —</option>
+            </select>
+        </div>
+        
+        <div>
+            <label for="prepCaixaNumero">Número da Caixa:</label>
+            <input type="text" id="prepCaixaNumero" placeholder="Ex.: 2024-001" required autocomplete="off" autofocus>
+        </div>
+
+        <button type="submit">Registrar Preparação</button>
+        
+        <div id="prepMensagem"></div>
+    </form>
+</div>
+
+<script>window.ERP_PAGE_ID = "preparacao";</script>
+<script src="estoque-app.js"></script>
+</body>
+</html>

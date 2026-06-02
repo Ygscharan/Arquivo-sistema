@@ -52,7 +52,9 @@
                 <select id="funcaoRespNova" style="flex: 1; min-width: 150px;" onchange="toggleCamposDigitalizador(this.value, '')">
                     <option value="">— Função —</option>
                     <option value="Preparador">Preparador</option>
+                    <option value="Preparador Chefe">Preparador Chefe</option>
                     <option value="Digitalizador">Digitalizador</option>
+                    <option value="Administrador">Administrador</option>
                 </select>
             </div>
             
@@ -63,8 +65,6 @@
             </div>
             
             <button id="btnCadastrarResponsavel" onclick="adicionarResponsavel()">Cadastrar responsável</button>
-            <button id="btnCancelarEdicao" onclick="cancelarEdicaoResponsavel()" style="display: none; background-color: #6c757d;">Cancelar Edição</button>
-            <input type="hidden" id="nomeRespEditando" value="">
         </div>
         <table>
             <thead>
