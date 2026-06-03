@@ -164,6 +164,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         if(ERP_PAGE_ID === "dashboard") atualizarDashboard();
         if(ERP_PAGE_ID === "mapa") mapa();
         if(ERP_PAGE_ID === "avulsas") renderAvulsas();
+        if(ERP_PAGE_ID === "preparacao") atualizarTelaPreparacao();
+        if(ERP_PAGE_ID === "digitalizacao") atualizarTelaDigitalizacao();
         
         if (ERP_PAGE_ID === "login") {
             atualizarTelaLogin();
@@ -186,6 +188,16 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             const usuarioLogado = sessionStorage.getItem("usuarioLogado");
             if (!usuarioLogado) {
                 window.location.href = "login.html";
+            } else if (usuarioLogado !== "admin_provisorio") {
+                try {
+                    const u = JSON.parse(usuarioLogado);
+                    if (ERP_PAGE_ID === "digitalizacao" && u.funcao !== "Digitalizador" && u.funcao !== "Administrador") {
+                        window.location.href = "dashboard.html";
+                    }
+                    if (ERP_PAGE_ID === "preparacao" && u.funcao !== "Preparador Chefe" && u.funcao !== "Administrador") {
+                        window.location.href = "dashboard.html";
+                    }
+                } catch(e) {}
             }
         }
     }
@@ -207,6 +219,15 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                 document.getElementById("loginError").style.color = "#27ae60";
                 document.getElementById("loginBtn").innerText = "Entrar no Sistema";
             }
+
+            const datalist = document.getElementById("loginHistory");
+            if (datalist) {
+                try {
+                    const historicoStr = localStorage.getItem("loginHistory") || "[]";
+                    const historico = JSON.parse(historicoStr);
+                    datalist.innerHTML = historico.map(u => `<option value="${u}">`).join("");
+                } catch(e) {}
+            }
         }
     }
 
@@ -227,9 +248,20 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const resp = db.responsaveis.find(r => r.login === user && r.senha === pass);
         
         if (resp) {
+            try {
+                const historicoStr = localStorage.getItem("loginHistory") || "[]";
+                let historico = JSON.parse(historicoStr);
+                if (!historico.includes(user)) {
+                    historico.push(user);
+                    localStorage.setItem("loginHistory", JSON.stringify(historico));
+                }
+            } catch(e) {}
+            
             sessionStorage.setItem("usuarioLogado", JSON.stringify(resp));
             if (resp.funcao === "Preparador Chefe") {
                 window.location.href = "preparacao.html";
+            } else if (resp.funcao === "Digitalizador") {
+                window.location.href = "digitalizacao.html";
             } else {
                 window.location.href = "dashboard.html";
             }
@@ -660,6 +692,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         if(document.getElementById("listaAvulsas")) renderAvulsas();
         if(document.getElementById("mapaLancamento")) renderMapaLancamento();
         if(document.getElementById("mapa")) mapa();
+        if(ERP_PAGE_ID === "preparacao") atualizarTelaPreparacao();
+        if(ERP_PAGE_ID === "digitalizacao") atualizarTelaDigitalizacao();
         atualizarOpcoesResponsavel();
         atualizarOpcoesResponsavelLista();
     }
@@ -1821,8 +1855,19 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             }
             if(vd && (!c.validade || c.validade < vd)) return false;
             if(va && (!c.validade || c.validade > va)) return false;
-            if(id && (!c.inicio || c.inicio < id)) return false;
-            if(ia && (!c.inicio || c.inicio > ia)) return false;
+            
+            let altDate = null;
+            if(c.dataUpdate) {
+                const matchBr = String(c.dataUpdate).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+                if(matchBr) {
+                    altDate = `${matchBr[3]}-${matchBr[2].padStart(2, '0')}-${matchBr[1].padStart(2, '0')}`;
+                } else if(String(c.dataUpdate).match(/^\d{4}-\d{2}-\d{2}/)) {
+                    altDate = String(c.dataUpdate).substring(0, 10);
+                }
+            }
+            if(id && (!altDate || altDate < id)) return false;
+            if(ia && (!altDate || altDate > ia)) return false;
+
             if(prat === "__avulsa__"){
                 if(c.prateleira && String(c.prateleira).trim()) return false;
             } else if(prat && c.prateleira !== prat) return false;
@@ -1889,11 +1934,19 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                 const k = c.validade.slice(0, 7);
                 map.set(k, (map.get(k) || 0) + 1);
             });
-        } else if(dim === "mes_inicio"){
+        } else if(dim === "mes_alteracao"){
             caixas.forEach(c => {
-                if(!c.inicio || c.inicio.length < 7) return;
-                const k = c.inicio.slice(0, 7);
-                map.set(k, (map.get(k) || 0) + 1);
+                let altDate = null;
+                if(c.dataUpdate) {
+                    const matchBr = String(c.dataUpdate).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+                    if(matchBr) {
+                        altDate = `${matchBr[3]}-${matchBr[2].padStart(2, '0')}`;
+                    } else if(String(c.dataUpdate).match(/^\d{4}-\d{2}-\d{2}/)) {
+                        altDate = String(c.dataUpdate).substring(0, 7);
+                    }
+                }
+                if(!altDate) return;
+                map.set(altDate, (map.get(altDate) || 0) + 1);
             });
         } else if(dim === "processo"){
             caixas.forEach(c => {
@@ -1914,7 +1967,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             const rest = entries.slice(11).reduce((s, x) => s + x[1], 0);
             entries = [...top, ["Outros", rest]];
         }
-        if((dim === "mes_validade" || dim === "mes_inicio") && entries.length){
+        if((dim === "mes_validade" || dim === "mes_alteracao") && entries.length){
             entries.sort((a, b) => a[0].localeCompare(b[0]));
         }
         const labels = entries.map(x => x[0]);
@@ -2453,13 +2506,67 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     }
 
     // ---------------- PREPARAÇÃO DE CAIXAS (Preparador Chefe) ----------------
+    let caixasSelecionadasParaPreparo = [];
+
+    function renderizarCaixasSelecionadas() {
+        const container = document.getElementById("caixasSelecionadasContainer");
+        if (!container) return;
+        container.innerHTML = "";
+        caixasSelecionadasParaPreparo.forEach((caixa, idx) => {
+            const pill = document.createElement("div");
+            pill.style.cssText = "background: #f1f2f6; border: 1px solid #dcdde1; border-radius: 16px; padding: 6px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px;";
+            pill.innerHTML = `
+                <span>${caixa}</span>
+                <span style="cursor: pointer; color: #e74c3c; font-weight: bold;" onclick="removerCaixaPreparo(${idx})">&times;</span>
+            `;
+            container.appendChild(pill);
+        });
+    }
+
+    function adicionarCaixaPreparo() {
+        const input = document.getElementById("prepCaixaNumero");
+        const msg = document.getElementById("prepMensagem");
+        const val = input.value.trim();
+        
+        if (!val) return;
+        
+        if (caixasSelecionadasParaPreparo.some(c => c.toLowerCase() === val.toLowerCase())) {
+            msg.style.color = "#e67e22";
+            msg.textContent = "Esta caixa já está na lista!";
+            return;
+        }
+
+        const caixaObj = db.caixas && db.caixas.find(c => c.caixa.toLowerCase() === val.toLowerCase());
+        if (!caixaObj) {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Caixa não encontrada no sistema!";
+            return;
+        }
+        if (caixaObj.status !== "Guardada") {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Apenas caixas com status 'Guardada' podem ser preparadas!";
+            return;
+        }
+
+        caixasSelecionadasParaPreparo.push(val);
+        input.value = "";
+        input.focus();
+        msg.textContent = "";
+        renderizarCaixasSelecionadas();
+    }
+
+    function removerCaixaPreparo(idx) {
+        caixasSelecionadasParaPreparo.splice(idx, 1);
+        renderizarCaixasSelecionadas();
+    }
+
     function atualizarTelaPreparacao() {
         const selFunc = document.getElementById("prepFuncionarioSelect");
         if (!selFunc) return;
-        
+
         selFunc.innerHTML = '<option value="">— Selecione o Preparador —</option>';
         if (db.responsaveis) {
-            const preparadores = db.responsaveis.filter(r => r.funcao === "Preparador").map(r => r.nome).sort();
+            const preparadores = db.responsaveis.filter(r => r.funcao === "Preparador" || r.funcao === "Preparador Chefe").map(r => r.nome).sort();
             preparadores.forEach(nome => {
                 const opt = document.createElement("option");
                 opt.value = nome;
@@ -2467,59 +2574,251 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                 selFunc.appendChild(opt);
             });
         }
+
+        const datalistCaixas = document.getElementById("listaCaixasParaPreparo");
+        if (datalistCaixas && db.caixas) {
+            datalistCaixas.innerHTML = "";
+            db.caixas.forEach(c => {
+                if (c.status === "Guardada") {
+                    const opt = document.createElement("option");
+                    opt.value = c.caixa;
+                    datalistCaixas.appendChild(opt);
+                }
+            });
+        }
+        renderizarCaixasSelecionadas();
     }
 
     async function registrarCaixaPreparada(event) {
         event.preventDefault();
-        const numCaixa = document.getElementById("prepCaixaNumero").value.trim();
         const funcionario = document.getElementById("prepFuncionarioSelect").value;
         const msg = document.getElementById("prepMensagem");
         
-        if (!numCaixa || !funcionario) {
+        const inputNumCaixa = document.getElementById("prepCaixaNumero").value.trim();
+        if (inputNumCaixa && caixasSelecionadasParaPreparo.length === 0) {
+            adicionarCaixaPreparo();
+        }
+
+        if (caixasSelecionadasParaPreparo.length === 0) {
             msg.style.color = "#e74c3c";
-            msg.textContent = "Preencha o número da caixa e o funcionário.";
+            msg.textContent = "Adicione ao menos uma caixa para registrar.";
+            return;
+        }
+
+        if (!funcionario) {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Selecione o funcionário.";
             return;
         }
 
         await carregarDB(true);
 
-        const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
+        let alteradas = 0;
+        let naoEncontradas = [];
+
+        for (const numCaixa of caixasSelecionadasParaPreparo) {
+            const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
+            
+            if (idx === -1) {
+                naoEncontradas.push(numCaixa);
+                continue;
+            }
+
+            const caixa = db.caixas[idx];
+            const antes = snapshotCaixaParaHistorico(caixa);
+
+            caixa.status = "Preparada";
+            caixa.usuario = funcionario;
+            caixa.dataUpdate = new Date().toLocaleString();
+
+            const mud = extrairMudancasRegistro(antes, caixa);
+            if (mud.length > 0) {
+                if (!Array.isArray(caixa.historico)) caixa.historico = [];
+                let registradoPor = "";
+                try {
+                    const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
+                    registradoPor = u.nome || "Preparador Chefe";
+                } catch(e) {}
+                
+                caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
+            }
+            alteradas++;
+        }
+
+        if (alteradas > 0) {
+            await salvarDB();
+            if (typeof confetti === 'function') {
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+            }
+        }
         
-        if (idx === -1) {
+        caixasSelecionadasParaPreparo = [];
+        renderizarCaixasSelecionadas();
+        document.getElementById("prepCaixaNumero").value = "";
+        document.getElementById("prepCaixaNumero").focus();
+        
+        if (naoEncontradas.length > 0) {
+            msg.style.color = "#e67e22";
+            msg.textContent = `${alteradas} caixa(s) registrada(s). Não encontradas: ${naoEncontradas.join(', ')}`;
+        } else {
+            msg.style.color = "#27ae60";
+            msg.textContent = `${alteradas} caixa(s) marcada(s) como Preparada(s) por ${funcionario} com sucesso!`;
+        }
+        
+        clearTimeout(window._prepMsgT);
+        window._prepMsgT = setTimeout(() => { msg.textContent = ""; }, 4500);
+    }
+
+    // ---------------- DIGITALIZAÇÃO DE CAIXAS ----------------
+    let caixasSelecionadasParaDigitalizar = [];
+
+    function renderizarCaixasSelecionadasDig() {
+        const container = document.getElementById("caixasSelecionadasContainerDig");
+        if (!container) return;
+        container.innerHTML = "";
+        caixasSelecionadasParaDigitalizar.forEach((caixa, idx) => {
+            const pill = document.createElement("div");
+            pill.style.cssText = "background: #f1f2f6; border: 1px solid #dcdde1; border-radius: 16px; padding: 6px 12px; display: flex; align-items: center; gap: 8px; font-size: 14px;";
+            pill.innerHTML = `
+                <span>${caixa}</span>
+                <span style="cursor: pointer; color: #e74c3c; font-weight: bold;" onclick="removerCaixaDigitalizacao(${idx})">&times;</span>
+            `;
+            container.appendChild(pill);
+        });
+    }
+
+    function adicionarCaixaDigitalizacao() {
+        const input = document.getElementById("digCaixaNumero");
+        const msg = document.getElementById("digMensagem");
+        const val = input.value.trim();
+        
+        if (!val) return;
+        
+        if (caixasSelecionadasParaDigitalizar.some(c => c.toLowerCase() === val.toLowerCase())) {
+            msg.style.color = "#e67e22";
+            msg.textContent = "Esta caixa já está na lista!";
+            return;
+        }
+
+        const caixaObj = db.caixas && db.caixas.find(c => c.caixa.toLowerCase() === val.toLowerCase());
+        if (!caixaObj) {
             msg.style.color = "#e74c3c";
             msg.textContent = "Caixa não encontrada no sistema!";
             return;
         }
-
-        const caixa = db.caixas[idx];
-        const antes = snapshotCaixaParaHistorico(caixa);
-
-        caixa.status = "Preparada";
-        caixa.usuario = funcionario;
-        caixa.dataUpdate = new Date().toLocaleString();
-
-        const mud = extrairMudancasRegistro(antes, caixa);
-        if (mud.length > 0) {
-            if (!Array.isArray(caixa.historico)) caixa.historico = [];
-            let registradoPor = "";
-            try {
-                const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
-                registradoPor = u.nome || "Preparador Chefe";
-            } catch(e) {}
-            
-            caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
+        if (caixaObj.status !== "Preparada") {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Apenas caixas com status 'Preparada' podem ser digitalizadas!";
+            return;
         }
 
-        await salvarDB();
+        caixasSelecionadasParaDigitalizar.push(val);
+        input.value = "";
+        input.focus();
+        msg.textContent = "";
+        renderizarCaixasSelecionadasDig();
+    }
+
+    function removerCaixaDigitalizacao(idx) {
+        caixasSelecionadasParaDigitalizar.splice(idx, 1);
+        renderizarCaixasSelecionadasDig();
+    }
+
+    function atualizarTelaDigitalizacao() {
+        const datalistCaixas = document.getElementById("listaCaixasParaDigitalizar");
+        if (datalistCaixas && db.caixas) {
+            datalistCaixas.innerHTML = "";
+            db.caixas.forEach(c => {
+                if (c.status === "Preparada") {
+                    const opt = document.createElement("option");
+                    opt.value = c.caixa;
+                    datalistCaixas.appendChild(opt);
+                }
+            });
+        }
+        renderizarCaixasSelecionadasDig();
+    }
+
+    async function registrarCaixaDigitalizada(event) {
+        event.preventDefault();
         
-        document.getElementById("prepCaixaNumero").value = "";
-        document.getElementById("prepCaixaNumero").focus();
+        let funcionario = "Digitalizador";
+        try {
+            const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
+            if (u && u.nome) {
+                funcionario = u.nome;
+            }
+        } catch(e) {}
+
+        const msg = document.getElementById("digMensagem");
         
-        msg.style.color = "#27ae60";
-        msg.textContent = "Caixa " + caixa.caixa + " marcada como Preparada por " + funcionario + " com sucesso!";
+        const inputNumCaixa = document.getElementById("digCaixaNumero").value.trim();
+        if (inputNumCaixa && caixasSelecionadasParaDigitalizar.length === 0) {
+            adicionarCaixaDigitalizacao();
+        }
+
+        if (caixasSelecionadasParaDigitalizar.length === 0) {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Adicione ao menos uma caixa para registrar.";
+            return;
+        }
+
+        await carregarDB(true);
+
+        let alteradas = 0;
+        let naoEncontradas = [];
+
+        for (const numCaixa of caixasSelecionadasParaDigitalizar) {
+            const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
+            
+            if (idx === -1) {
+                naoEncontradas.push(numCaixa);
+                continue;
+            }
+
+            const caixa = db.caixas[idx];
+            const antes = snapshotCaixaParaHistorico(caixa);
+
+            caixa.status = "Digitalizada";
+            caixa.usuario = funcionario;
+            caixa.dataUpdate = new Date().toLocaleString();
+
+            const mud = extrairMudancasRegistro(antes, caixa);
+            if (mud.length > 0) {
+                if (!Array.isArray(caixa.historico)) caixa.historico = [];
+                let registradoPor = "";
+                try {
+                    const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
+                    registradoPor = u.nome || "Digitalizador";
+                } catch(e) {}
+                
+                caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
+            }
+            alteradas++;
+        }
+
+        if (alteradas > 0) {
+            await salvarDB();
+            if (typeof confetti === 'function') {
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+            }
+        }
         
-        clearTimeout(window._prepMsgT);
-        window._prepMsgT = setTimeout(() => { msg.textContent = ""; }, 4500);
+        caixasSelecionadasParaDigitalizar = [];
+        renderizarCaixasSelecionadasDig();
+        document.getElementById("digCaixaNumero").value = "";
+        document.getElementById("digCaixaNumero").focus();
+        
+        if (naoEncontradas.length > 0) {
+            msg.style.color = "#e67e22";
+            msg.textContent = `${alteradas} caixa(s) registrada(s). Não encontradas: ${naoEncontradas.join(', ')}`;
+        } else {
+            msg.style.color = "#27ae60";
+            msg.textContent = `${alteradas} caixa(s) marcada(s) como Digitalizada(s) por ${funcionario} com sucesso!`;
+        }
+        
+        clearTimeout(window._digMsgT);
+        window._digMsgT = setTimeout(() => { msg.textContent = ""; }, 4500);
     }
 
     function logout() {

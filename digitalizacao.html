@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Estoque ERP — Preparação de Caixas</title>
+    <title>Estoque ERP — Registrar Digitalização</title>
     <link rel="stylesheet" href="estoque.css">
     <style>
         .preparacao-container {
@@ -37,7 +37,7 @@
         }
         .preparacao-form button {
             padding: 14px;
-            background-color: #27ae60;
+            background-color: #3498db;
             color: white;
             border: none;
             border-radius: 4px;
@@ -47,9 +47,9 @@
             transition: background 0.3s;
         }
         .preparacao-form button:hover {
-            background-color: #219653;
+            background-color: #2980b9;
         }
-        #prepMensagem {
+        #digMensagem {
             margin-top: 15px;
             font-weight: bold;
             min-height: 24px;
@@ -72,34 +72,28 @@
 </div>
 
 <div class="preparacao-container">
-    <h2 style="margin-top:0; color:#2c3e50;">✅ Registro de Preparação</h2>
-    <p style="color: #7f8c8d;">Informe a caixa e qual funcionário realizou a preparação.</p>
+    <h2 style="margin-top:0; color:#2c3e50;">🖨️ Registro de Digitalização</h2>
+    <p style="color: #7f8c8d;">Informe a caixa preparada para registrar a digitalização.</p>
 
-    <form class="preparacao-form" onsubmit="registrarCaixaPreparada(event)">
-        <div>
-            <label for="prepFuncionarioSelect">Funcionário Preparador:</label>
-            <select id="prepFuncionarioSelect" required>
-                <option value="">— Selecione o Preparador —</option>
-            </select>
-        </div>
+    <form class="preparacao-form" onsubmit="registrarCaixaDigitalizada(event)">
         
         <div>
-            <label for="prepCaixaNumero">Caixas para Preparar:</label>
+            <label for="digCaixaNumero">Caixas para Digitalizar (Apenas Preparadas):</label>
             <div style="display: flex; gap: 10px;">
-                <input type="text" id="prepCaixaNumero" list="listaCaixasParaPreparo" placeholder="Ex.: 2024-001" autocomplete="off" autofocus onkeypress="if(event.key === 'Enter') { event.preventDefault(); adicionarCaixaPreparo(); }">
-                <button type="button" onclick="adicionarCaixaPreparo()" style="width: auto; background-color: #3498db; padding: 12px 20px;">Adicionar</button>
+                <input type="text" id="digCaixaNumero" list="listaCaixasParaDigitalizar" placeholder="Ex.: 2024-001" autocomplete="off" autofocus onkeypress="if(event.key === 'Enter') { event.preventDefault(); adicionarCaixaDigitalizacao(); }">
+                <button type="button" onclick="adicionarCaixaDigitalizacao()" style="width: auto; background-color: #34495e; padding: 12px 20px;">Adicionar</button>
             </div>
-            <datalist id="listaCaixasParaPreparo"></datalist>
-            <div id="caixasSelecionadasContainer" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px;"></div>
+            <datalist id="listaCaixasParaDigitalizar"></datalist>
+            <div id="caixasSelecionadasContainerDig" style="margin-top: 15px; display: flex; flex-wrap: wrap; gap: 8px;"></div>
         </div>
 
-        <button type="submit">Registrar Preparação em Massa</button>
+        <button type="submit">Registrar Digitalização em Massa</button>
         
-        <div id="prepMensagem"></div>
+        <div id="digMensagem"></div>
     </form>
 </div>
 
-<script>window.ERP_PAGE_ID = "preparacao";</script>
+<script>window.ERP_PAGE_ID = "digitalizacao";</script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 <script src="estoque-app.js"></script>
 </body>

@@ -93,7 +93,8 @@
     </div>
 
     <form class="login-form" id="loginForm" onsubmit="realizarLogin(event)" style="display: none;">
-        <input type="text" id="loginUsername" placeholder="Login" required>
+        <input type="text" id="loginUsername" placeholder="Login" list="loginHistory" autocomplete="off" required>
+        <datalist id="loginHistory"></datalist>
         <input type="password" id="loginPassword" placeholder="Senha" required>
         <button type="submit" id="loginBtn">Entrar</button>
         <div id="loginError"></div>
