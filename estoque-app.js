@@ -19,6 +19,38 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     let dashProcessoInicializado = false;
     const ERP_PAGE_ID = window.ERP_PAGE_ID || "index";
 
+    // Proteção Imediata: Verifica a sessão e permissões assim que a página carrega
+    function verificarSessao() {
+        if (ERP_PAGE_ID !== "login") {
+            const usuarioLogadoStr = sessionStorage.getItem("usuarioLogado");
+            if (!usuarioLogadoStr) {
+                window.location.replace("login.html");
+            } else if (usuarioLogadoStr !== "admin_provisorio") {
+                try {
+                    const u = JSON.parse(usuarioLogadoStr);
+                    if (ERP_PAGE_ID === "digitalizacao" && u.funcao !== "Digitalizador" && u.funcao !== "Administrador") {
+                        window.location.replace("dashboard.html");
+                    }
+                    if (ERP_PAGE_ID === "preparacao" && u.funcao !== "Preparador Chefe" && u.funcao !== "Administrador") {
+                        window.location.replace("dashboard.html");
+                    }
+                } catch(e) {}
+            }
+        } else {
+            // Ao voltar ou acessar a tela de login, o sistema deve registrar o logoff
+            sessionStorage.removeItem("usuarioLogado");
+        }
+    }
+    
+    verificarSessao();
+    
+    // Proteção adicional para quando o usuário usa os botões de voltar/avançar do navegador (evita exibir página em cache)
+    window.addEventListener("pageshow", function(event) {
+        if (event.persisted) { // se a página foi carregada do cache
+            verificarSessao();
+        }
+    });
+
     const IDB_NOME = "erp-estoque-fs";
     const IDB_STORE = "config";
     const IDB_KEY_PASTA = "directoryHandle";
@@ -166,9 +198,9 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         if(ERP_PAGE_ID === "avulsas") renderAvulsas();
         if(ERP_PAGE_ID === "preparacao") atualizarTelaPreparacao();
         if(ERP_PAGE_ID === "digitalizacao") atualizarTelaDigitalizacao();
-        
-        if (ERP_PAGE_ID === "login") {
-            atualizarTelaLogin();
+        if(ERP_PAGE_ID === "relacao") atualizarTelaRelacao();
+
+        if (ERP_PAGE_ID === "login") {            atualizarTelaLogin();
         }
 
         setInterval(async () => { if(pastaHandle && edit===null) await carregarDB(true); }, 5000);
@@ -236,17 +268,17 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const user = document.getElementById("loginUsername").value.trim();
         const pass = document.getElementById("loginPassword").value.trim();
         const err = document.getElementById("loginError");
-        
+
         const temUsuarioComSenha = db.responsaveis && db.responsaveis.some(r => r.login && r.senha);
-        
+
         if (!temUsuarioComSenha) {
             sessionStorage.setItem("usuarioLogado", "admin_provisorio");
-            window.location.href = "dashboard.html";
+            window.location.href = "index.html";
             return;
         }
 
         const resp = db.responsaveis.find(r => r.login === user && r.senha === pass);
-        
+
         if (resp) {
             try {
                 const historicoStr = localStorage.getItem("loginHistory") || "[]";
@@ -256,20 +288,19 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                     localStorage.setItem("loginHistory", JSON.stringify(historico));
                 }
             } catch(e) {}
-            
+
             sessionStorage.setItem("usuarioLogado", JSON.stringify(resp));
             if (resp.funcao === "Preparador Chefe") {
                 window.location.href = "preparacao.html";
             } else if (resp.funcao === "Digitalizador") {
                 window.location.href = "digitalizacao.html";
             } else {
-                window.location.href = "dashboard.html";
+                window.location.href = "index.html";
             }
         } else {
             err.innerText = "Login ou senha incorretos!";
         }
     }
-
     function aplicarEdicaoSeNecessario(){
         const params = new URLSearchParams(location.search);
         let q = params.get("edit");
@@ -694,6 +725,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         if(document.getElementById("mapa")) mapa();
         if(ERP_PAGE_ID === "preparacao") atualizarTelaPreparacao();
         if(ERP_PAGE_ID === "digitalizacao") atualizarTelaDigitalizacao();
+        if(ERP_PAGE_ID === "relacao") atualizarTelaRelacao();
         atualizarOpcoesResponsavel();
         atualizarOpcoesResponsavelLista();
     }
@@ -2819,6 +2851,170 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         
         clearTimeout(window._digMsgT);
         window._digMsgT = setTimeout(() => { msg.textContent = ""; }, 4500);
+    }
+
+    // ---------------- RELAÇÃO DE CAIXAS ----------------
+    function atualizarTelaRelacao() {
+        if (ERP_PAGE_ID !== "relacao") return;
+
+        const selProc = document.getElementById("relProcessoSelect");
+        const selDig = document.getElementById("relDigitalizadorSelect");
+        if (!selProc || !selDig) return;
+
+        // Limpar selects
+        selProc.innerHTML = '<option value="">— Selecione o Processo —</option>';
+        selDig.innerHTML = '<option value="">— Selecione o Digitalizador —</option>';
+
+        // Preencher Processos que possuem caixas preparadas
+        const processosComPreparadas = new Set();
+        db.caixas.forEach(c => {
+            if (c.status === "Preparada" && Array.isArray(c.processos)) {
+                c.processos.forEach(p => processosComPreparadas.add(p));
+            }
+        });
+
+        if (db.processos) {
+            db.processos.forEach(p => {
+                if (processosComPreparadas.has(p)) {
+                    const opt = document.createElement("option");
+                    opt.value = p;
+                    opt.textContent = p;
+                    selProc.appendChild(opt);
+                }
+            });
+        }
+
+        // Preencher Digitalizadores
+        if (db.responsaveis) {
+            db.responsaveis.forEach(r => {
+                if (r.funcao === "Digitalizador" || r.funcao === "Administrador") {
+                    const opt = document.createElement("option");
+                    opt.value = r.nome;
+                    opt.textContent = r.nome + " (" + r.funcao + ")";
+                    selDig.appendChild(opt);
+                }
+            });
+        }
+
+        atualizarQuantidadeDisponivel();
+    }
+
+    function atualizarQuantidadeDisponivel() {
+        const selProc = document.getElementById("relProcessoSelect");
+        const qtdInfo = document.getElementById("relQtdDisponivel");
+        const inputQtd = document.getElementById("relQtdInput");
+        const btnGerar = document.getElementById("btnGerar");
+        
+        if (!selProc || !qtdInfo) return;
+
+        const proc = selProc.value;
+        if (!proc) {
+            qtdInfo.textContent = "Selecione um processo para ver a disponibilidade.";
+            inputQtd.disabled = true;
+            inputQtd.value = "";
+            btnGerar.disabled = true;
+            return;
+        }
+
+        const qtdPreparadas = db.caixas.filter(c => c.status === "Preparada" && Array.isArray(c.processos) && c.processos.includes(proc)).length;
+
+        qtdInfo.textContent = `Caixas preparadas disponíveis neste processo: ${qtdPreparadas}`;
+        
+        if (qtdPreparadas > 0) {
+            inputQtd.disabled = false;
+            inputQtd.max = qtdPreparadas;
+            btnGerar.disabled = false;
+        } else {
+            inputQtd.disabled = true;
+            inputQtd.value = "";
+            btnGerar.disabled = true;
+        }
+    }
+
+    async function gerarRelacao(event) {
+        event.preventDefault();
+        const proc = document.getElementById("relProcessoSelect").value;
+        const qtdDesejada = parseInt(document.getElementById("relQtdInput").value, 10);
+        const dig = document.getElementById("relDigitalizadorSelect").value;
+        const msg = document.getElementById("relMensagem");
+
+        if (!proc || isNaN(qtdDesejada) || qtdDesejada <= 0 || !dig) {
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Preencha todos os campos corretamente.";
+            return;
+        }
+
+        // Filtra caixas preparadas do processo
+        let caixasProc = db.caixas.filter(c => c.status === "Preparada" && Array.isArray(c.processos) && c.processos.includes(proc));
+        
+        if (caixasProc.length < qtdDesejada) {
+            msg.style.color = "#e74c3c";
+            msg.textContent = `Apenas ${caixasProc.length} caixas estão preparadas.`;
+            return;
+        }
+
+        // Seleciona a quantidade solicitada
+        const caixasSelecionadas = caixasProc.slice(0, qtdDesejada);
+
+        let alteradas = 0;
+        let uLogadoNome = "Administrador";
+        try {
+            const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
+            uLogadoNome = u.nome || "Administrador";
+        } catch(e) {}
+
+        for (let c of caixasSelecionadas) {
+            const antes = snapshotCaixaParaHistorico(c);
+            
+            c.usuario = dig;
+            c.dataUpdate = new Date().toLocaleString();
+
+            const mud = extrairMudancasRegistro(antes, c);
+            if (mud.length > 0) {
+                if (!Array.isArray(c.historico)) c.historico = [];
+                c.historico.push(criarEntradaHistorico("edicao", mud, uLogadoNome));
+            }
+            alteradas++;
+        }
+
+        await salvarDB();
+        
+        msg.style.color = "#27ae60";
+        msg.textContent = `Relação gerada com sucesso! ${alteradas} caixas atribuídas a ${dig}.`;
+
+        // Gerar relatório para impressão
+        let html = `<h3>Relação de Caixas para Digitalização</h3>
+            <p><strong>Digitalizador Destino:</strong> ${dig}</p>
+            <p><strong>Processo:</strong> ${proc}</p>
+            <p><strong>Data:</strong> ${new Date().toLocaleDateString()}</p>
+            <table class="tabela">
+                <thead><tr><th>Caixa</th><th>Unidade</th><th>Data Início</th><th>Status</th></tr></thead>
+                <tbody>`;
+        
+        caixasSelecionadas.forEach(c => {
+            html += `<tr>
+                <td>${c.caixa}</td>
+                <td>${c.unidade || '—'}</td>
+                <td>${c.inicio || '—'}</td>
+                <td>${c.status}</td>
+            </tr>`;
+        });
+        
+        html += `</tbody></table><br>
+        <div style="margin-top:20px;">
+            <button onclick="window.print()" style="padding:10px 15px; background:#3498db; color:#fff; border:none; border-radius:4px; cursor:pointer;">Imprimir Relação</button> 
+            <button onclick="fecharModal()" style="padding:10px 15px; background:#7f8c8d; color:#fff; border:none; border-radius:4px; cursor:pointer;">Fechar</button>
+        </div>`;
+        abrirModal(html);
+
+        // Reset
+        document.getElementById("relProcessoSelect").value = "";
+        document.getElementById("relQtdInput").value = "";
+        document.getElementById("relDigitalizadorSelect").value = "";
+        atualizarTelaRelacao();
+        
+        clearTimeout(window._relMsgT);
+        window._relMsgT = setTimeout(() => { msg.textContent = ""; }, 5000);
     }
 
     function logout() {

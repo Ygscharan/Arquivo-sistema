@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Estoque ERP — Relação de Caixas</title>
+    <link rel="stylesheet" href="estoque.css">
+    <style>
+        .relacao-container {
+            max-width: 600px;
+            margin: 40px auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .relacao-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            text-align: left;
+            margin-top: 20px;
+        }
+        .relacao-form label {
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 5px;
+            display: block;
+        }
+        .relacao-form input, .relacao-form select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .relacao-form button {
+            padding: 14px;
+            background-color: #8e44ad;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .relacao-form button:hover {
+            background-color: #732d91;
+        }
+        #relMensagem {
+            margin-top: 15px;
+            font-weight: bold;
+            min-height: 24px;
+        }
+        .info-qtd {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div>📦 ERP Estoque <span id="syncLabel" class="status-sync">...</span></div>
+    <div class="hamburger" id="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
+    <nav class="menu" id="menu">
+        <a href="dashboard.html" class="menu-link" onclick="fecharMenuDropdown()">📊 Dashboard</a>
+        <a href="lancamento.html" class="menu-link" onclick="fecharMenuDropdown()">📝 Lançamento de Caixa</a>
+        <a href="index.html" class="menu-link" onclick="fecharMenuDropdown()">📋 Lista de Caixas</a>
+        <a href="avulsas.html" class="menu-link" onclick="fecharMenuDropdown()">📦 Gestão de Avulsas</a>
+        <a href="mapa.html" class="menu-link" onclick="fecharMenuDropdown()">🗺️ Mapa de Prateleiras</a>
+        <a href="config.html" class="menu-link" onclick="fecharMenuDropdown()">⚙️ Config. Prateleiras</a>
+        <a href="processos.html" class="menu-link" onclick="fecharMenuDropdown()">📂 Gerenciar Processos</a>
+        <a href="unidades.html" class="menu-link" onclick="fecharMenuDropdown()">🏢 Gerenciar Unidades</a>
+        <a href="responsaveis.html" class="menu-link" onclick="fecharMenuDropdown()">👥 Gerenciar Responsáveis</a>
+        <a href="relacao.html" class="menu-link" onclick="fecharMenuDropdown()">📄 Gerar Relação</a>
+        <hr>
+        <button type="button" onclick="selecionarPasta()">📂 Alterar Pasta</button>
+    </nav>
+</header>
+
+<div id="barraReconectarPasta" role="region" aria-label="Reconectar pasta de dados" style="display: none;">
+    <span id="barraReconectarTexto"></span>
+    <button type="button" class="btn-prim" onclick="reconectarPastaSalva()">Permitir acesso à pasta salva</button>
+    <button type="button" class="btn-sec" onclick="escolherOutraPastaManual()">Escolher outra pasta…</button>
+</div>
+
+<div class="relacao-container">
+    <h2 style="margin-top:0; color:#2c3e50;">📄 Gerar Relação de Digitalização</h2>
+    <p style="color: #7f8c8d;">Aloque caixas preparadas de um processo para um digitalizador.</p>
+
+    <form class="relacao-form" onsubmit="gerarRelacao(event)">
+        <div>
+            <label for="relProcessoSelect">Processo:</label>
+            <select id="relProcessoSelect" required onchange="atualizarQuantidadeDisponivel()">
+                <option value="">— Selecione o Processo —</option>
+            </select>
+            <div id="relQtdDisponivel" class="info-qtd">Selecione um processo para ver a disponibilidade.</div>
+        </div>
+
+        <div>
+            <label for="relQtdInput">Quantidade de Caixas:</label>
+            <input type="number" id="relQtdInput" min="1" placeholder="Ex.: 10" required disabled>
+        </div>
+
+        <div>
+            <label for="relDigitalizadorSelect">Digitalizador Destino:</label>
+            <select id="relDigitalizadorSelect" required>
+                <option value="">— Selecione o Digitalizador —</option>
+            </select>
+        </div>
+
+        <button type="submit" id="btnGerar" disabled>Gerar Relação</button>
+        
+        <div id="relMensagem"></div>
+    </form>
+</div>
+
+<div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
+
+<script>window.ERP_PAGE_ID = "relacao";</script>
+<script src="estoque-app.js"></script>
+</body>
+</html>
