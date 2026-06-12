@@ -135,10 +135,21 @@
 
         <div class="dashboard-kpis" id="dashboardKpis"></div>
 
+        <div class="card dashboard-producao" style="margin-top: 20px;">
+            <h4>📈 Produção Diária de Digitalizadores</h4>
+            <div id="tabelaProducaoDiaria" style="overflow-x: auto; margin-top: 10px;">
+                <p style="color: #7f8c8d; font-size: 14px;">Os dados de produção aparecerão aqui conforme os filtros aplicados.</p>
+            </div>
+        </div>
+
         <div class="dashboard-charts">
             <div class="card chart-card">
                 <h4>Gráfico A</h4>
                 <div class="chart-controls">
+                    <label>Métrica <select id="dashMetrica1">
+                        <option value="caixas">Qtd. de Caixas</option>
+                        <option value="documentos">Qtd. de Documentos</option>
+                    </select></label>
                     <label>Dimensão <select id="dashDim1">
                         <option value="status">Por status</option>
                         <option value="prateleira">Por prateleira</option>
@@ -162,6 +173,10 @@
             <div class="card chart-card">
                 <h4>Gráfico B</h4>
                 <div class="chart-controls">
+                    <label>Métrica <select id="dashMetrica2">
+                        <option value="caixas">Qtd. de Caixas</option>
+                        <option value="documentos">Qtd. de Documentos</option>
+                    </select></label>
                     <label>Dimensão <select id="dashDim2">
                         <option value="prateleira">Por prateleira</option>
                         <option value="status">Por status</option>

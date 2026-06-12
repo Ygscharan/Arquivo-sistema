@@ -379,10 +379,11 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
 
             if (texto !== lastHash) {
                 lastHash = texto;
-                db = texto ? JSON.parse(texto) : { caixas: [], prateleiras: [], processos: [], unidades: [], responsaveis: [] };
+                db = texto ? JSON.parse(texto) : { caixas: [], prateleiras: [], processos: [], unidades: [], responsaveis: [], relacoes: [] };
                 if(!db.processos) db.processos = [];
                 if(!db.unidades) db.unidades = [];
                 if(!db.responsaveis) db.responsaveis = [];
+                if(!db.relacoes) db.relacoes = [];
                 
                 // Normaliza funções antigas para as novas "Preparador" e "Digitalizador"
                 db.responsaveis.forEach(r => {
@@ -1932,39 +1933,46 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         renderDashboardDados();
     }
 
-    function agregarParaGrafico(dim, caixas){
+    function agregarParaGrafico(dim, caixas, metrica = 'caixas'){
         const map = new Map();
         const coresStatus = { Guardada:"#27ae60", Preparada:"#f1c40f", Digitalizada:"#3498db", Eliminada:"#e74c3c", Avulsa:"#9b59b6" };
+
+        function getValorIncremento(caixa) {
+            if (metrica === 'documentos') {
+                return (parseInt(caixa.documentos, 10) || 0);
+            }
+            return 1;
+        }
 
         if(dim === "status"){
             ["Guardada","Avulsa","Preparada","Digitalizada","Eliminada"].forEach(s => map.set(s, 0));
             caixas.forEach(c => {
                 const k = c.status || "—";
-                map.set(k, (map.get(k) || 0) + 1);
+                map.set(k, (map.get(k) || 0) + getValorIncremento(c));
             });
         } else if(dim === "prateleira"){
             db.prateleiras.forEach(p => map.set(p.nome, 0));
             map.set("(Avulsa)", 0);
             caixas.forEach(c => {
                 const k = (c.prateleira && String(c.prateleira).trim()) ? c.prateleira : "(Avulsa)";
-                map.set(k, (map.get(k) || 0) + 1);
+                map.set(k, (map.get(k) || 0) + getValorIncremento(c));
             });
         } else if(dim === "nivel"){
             for(let n = 1; n <= 13; n++) map.set("Nível " + n, 0);
             caixas.forEach(c => {
                 const n = c.nivel;
-                if(n >= 1 && n <= 13) map.set("Nível " + n, (map.get("Nível " + n) || 0) + 1);
+                if(n >= 1 && n <= 13) map.set("Nível " + n, (map.get("Nível " + n) || 0) + getValorIncremento(c));
             });
         } else if(dim === "usuario"){
             caixas.forEach(c => {
                 const k = (c.usuario && String(c.usuario).trim()) ? String(c.usuario).trim() : "(não informado)";
-                map.set(k, (map.get(k) || 0) + 1);
+                map.set(k, (map.get(k) || 0) + getValorIncremento(c));
             });
         } else if(dim === "mes_validade"){
             caixas.forEach(c => {
                 if(!c.validade || c.validade.length < 7) return;
                 const k = c.validade.slice(0, 7);
-                map.set(k, (map.get(k) || 0) + 1);
+                map.set(k, (map.get(k) || 0) + getValorIncremento(c));
             });
         } else if(dim === "mes_alteracao"){
             caixas.forEach(c => {
@@ -1978,17 +1986,17 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                     }
                 }
                 if(!altDate) return;
-                map.set(altDate, (map.get(altDate) || 0) + 1);
+                map.set(altDate, (map.get(altDate) || 0) + getValorIncremento(c));
             });
         } else if(dim === "processo"){
             caixas.forEach(c => {
                 const ps = (c.processos && c.processos.length) ? c.processos : ["(sem processo)"];
-                ps.forEach(p => map.set(p, (map.get(p) || 0) + 1));
+                ps.forEach(p => map.set(p, (map.get(p) || 0) + getValorIncremento(c)));
             });
         } else if(dim === "unidade"){
             caixas.forEach(c => {
                 const k = (c.unidade && String(c.unidade).trim()) ? String(c.unidade).trim() : "(sem unidade)";
-                map.set(k, (map.get(k) || 0) + 1);
+                map.set(k, (map.get(k) || 0) + getValorIncremento(c));
             });
         }
 
@@ -2028,7 +2036,14 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const wrap = canvas.closest(".chart-wrap");
         const dim = document.getElementById(dimSelectId).value;
         const tipo = document.getElementById(tipoSelectId).value;
-        const { labels, values, coresStatus } = agregarParaGrafico(dim, caixas);
+        
+        let metrica = 'caixas';
+        const metricaSelectId = dimSelectId.replace('Dim', 'Metrica');
+        if(document.getElementById(metricaSelectId)) {
+            metrica = document.getElementById(metricaSelectId).value;
+        }
+
+        const { labels, values, coresStatus } = agregarParaGrafico(dim, caixas, metrica);
         const semDados = !values.length || values.every(v => v === 0);
 
         let alvoMsg = wrap.querySelector(".dash-chart-msg");
@@ -2143,6 +2158,14 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             if(n > 0) return `<span class="badge" style="background:${bg}">${s}: ${n.toLocaleString('pt-BR')}</span>`;
             return '';
         }).join(" ");
+        
+        let totalDocs = 0;
+        filtradas.forEach(c => {
+            if (c.documentos) totalDocs += parseInt(c.documentos, 10);
+        });
+
+        const numDigitalizadores = (db.responsaveis || []).filter(r => r.funcao === "Digitalizador" || r.funcao === "Administrador").length;
+        const mediaPorDig = numDigitalizadores > 0 ? Math.round(totalDocs / numDigitalizadores) : 0;
 
         el.innerHTML = `
             <div class="kpi-card">
@@ -2160,6 +2183,16 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                 <div class="kpi-val" style="color:#e74c3c" id="kpiVencidas">0</div>
                 <div class="kpi-sub">Vencidas · <span style="color:#f39c12; font-weight:bold;">${vence30}</span> a vencer em 30 dias</div>
             </div>
+            <div class="kpi-card">
+                <div class="kpi-lbl">Total de Docs.</div>
+                <div class="kpi-val" id="kpiMediaDocs">0</div>
+                <div class="kpi-sub">Soma de documentos registrados nas caixas</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-lbl">Média de Docs por Dig.</div>
+                <div class="kpi-val" id="kpiMediaPorDig">0</div>
+                <div class="kpi-sub">Ref: ${numDigitalizadores} digitalizador(es) ativo(s)</div>
+            </div>
             <div class="kpi-card" style="flex:2; min-width:280px;">
                 <div class="kpi-lbl">Distribuição Atual</div>
                 <div class="kpi-inline">${badges || '<span style="color:#95a5a6; background:none; box-shadow:none;">Nenhum dado</span>'}</div>
@@ -2172,13 +2205,133 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             const objOcupacao = document.getElementById("kpiOcupacao");
             if(objOcupacao) objOcupacao.innerHTML = cap ? pctOcup + "%" : "—";
             animarNumeros("kpiVencidas", vencidas, 1000);
-        }, 100);
+            animarNumeros("kpiMediaDocs", totalDocs, 1000);
+            animarNumeros("kpiMediaPorDig", mediaPorDig, 1000);
+        }, 100);    }
+
+    function renderProducaoDiaria(filtradas) {
+        const el = document.getElementById("tabelaProducaoDiaria");
+        if(!el) return;
+
+        const producao = {}; 
+        const datasSet = new Set();
+
+        filtradas.forEach(c => {
+            let teveHistorico = false;
+            if(c.historico && Array.isArray(c.historico)) {
+                c.historico.forEach(h => {
+                    const mud = h.mudancas || [];
+                    const virouDig = mud.some(m => m.campo === "status" && m.para === "Digitalizada");
+                    if(virouDig) {
+                        teveHistorico = true;
+                        const dataObj = h.quandoISO ? new Date(h.quandoISO) : null;
+                        if(dataObj) {
+                            const d = String(dataObj.getDate()).padStart(2, '0');
+                            const m = String(dataObj.getMonth() + 1).padStart(2, '0');
+                            const y = dataObj.getFullYear();
+                            const dataStr = `${d}/${m}/${y}`;
+                            
+                            const usuario = h.registradoPor || c.usuario || "Desconhecido";
+                            
+                            if(!producao[usuario]) producao[usuario] = { total: 0 };
+                            if(!producao[usuario][dataStr]) producao[usuario][dataStr] = 0;
+                            
+                            const docMud = mud.find(m => m.campo === "documentos");
+                            let qtd = 0;
+                            if (docMud && !isNaN(parseInt(docMud.para, 10))) {
+                                qtd = parseInt(docMud.para, 10);
+                            } else if (c.documentos) {
+                                qtd = c.documentos;
+                            }
+                            
+                            producao[usuario][dataStr] += qtd;
+                            producao[usuario].total += qtd;
+                            datasSet.add(dataStr);
+                        }
+                    }
+                });
+            } 
+            
+            if (!teveHistorico && c.status === "Digitalizada") {
+                let altDate = null;
+                if(c.dataUpdate) {
+                    const matchBr = String(c.dataUpdate).match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+                    if(matchBr) {
+                        altDate = `${matchBr[1].padStart(2, '0')}/${matchBr[2].padStart(2, '0')}/${matchBr[3]}`;
+                    } else if(String(c.dataUpdate).match(/^\d{4}-\d{2}-\d{2}/)) {
+                        const p = String(c.dataUpdate).substring(0, 10).split("-");
+                        altDate = `${p[2]}/${p[1]}/${p[0]}`;
+                    }
+                }
+                if(!altDate) altDate = "Sem Data";
+                
+                const usuario = c.usuario || "Desconhecido";
+                if(!producao[usuario]) producao[usuario] = { total: 0 };
+                if(!producao[usuario][altDate]) producao[usuario][altDate] = 0;
+                
+                const qtd = c.documentos || 0;
+                producao[usuario][altDate] += qtd;
+                producao[usuario].total += qtd;
+                datasSet.add(altDate);
+            }
+        });
+
+        if(Object.keys(producao).length === 0) {
+            el.innerHTML = "<p style='color: #7f8c8d; font-size: 14px;'>Nenhuma produção de digitalização encontrada no período/filtro atual.</p>";
+            return;
+        }
+
+        const datasArr = Array.from(datasSet).sort((a,b) => {
+            if(a === "Sem Data") return 1;
+            if(b === "Sem Data") return -1;
+            const pa = a.split('/');
+            const pb = b.split('/');
+            const da = new Date(pa[2], pa[1]-1, pa[0]);
+            const db = new Date(pb[2], pb[1]-1, pb[0]);
+            return da - db;
+        });
+
+        let html = `<table class="tabela-padrao" style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="text-align: left; border-bottom: 2px solid #ccc; padding: 8px;">Digitalizador</th>`;
+        
+        datasArr.forEach(d => {
+            html += `<th style="text-align: center; border-bottom: 2px solid #ccc; padding: 8px;">${d}</th>`;
+        });
+        
+        html += `<th style="text-align: center; border-bottom: 2px solid #ccc; padding: 8px;">Total</th>
+                 <th style="text-align: center; border-bottom: 2px solid #ccc; padding: 8px;">Média Diária</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+        for(const user in producao) {
+            html += `<tr><td style="border-bottom: 1px solid #eee; padding: 8px;"><b>${escModal(user)}</b></td>`;
+            
+            let diasTrabalhados = 0;
+            datasArr.forEach(d => {
+                const val = producao[user][d] || 0;
+                if(val > 0) diasTrabalhados++;
+                html += `<td style="text-align: center; border-bottom: 1px solid #eee; padding: 8px;">${val > 0 ? val : '-'}</td>`;
+            });
+            
+            const media = diasTrabalhados > 0 ? (producao[user].total / diasTrabalhados).toFixed(1) : 0;
+            
+            html += `<td style="text-align: center; font-weight: bold; border-bottom: 1px solid #eee; padding: 8px;">${producao[user].total}</td>
+                     <td style="text-align: center; font-weight: bold; color: #2980b9; border-bottom: 1px solid #eee; padding: 8px;">${media}</td>
+                   </tr>`;
+        }
+
+        html += `</tbody></table>`;
+        el.innerHTML = html;
     }
 
     function renderDashboardDados(){
         preencherSelectsDashboard();
         const filtradas = caixasFiltradasDashboard();
         renderKpis(filtradas);
+        renderProducaoDiaria(filtradas);
         destruirDashboardCharts();
         montarChart("chartDashboard1", "dashDim1", "dashTipo1", filtradas);
         montarChart("chartDashboard2", "dashDim2", "dashTipo2", filtradas);
@@ -2197,6 +2350,12 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                 if(document.getElementById("dashBusca")) renderDashboardDados();
             });
         });
+        const busca = document.getElementById("dashBusca");
+        if(busca) {
+            busca.addEventListener("input", () => {
+                renderDashboardDados();
+            });
+        }
     })();
 
     // ---------------- GESTÃO DE AVULSAS ----------------
@@ -2559,25 +2718,25 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const input = document.getElementById("prepCaixaNumero");
         const msg = document.getElementById("prepMensagem");
         const val = input.value.trim();
-        
-        if (!val) return;
-        
+
+        if (!val) return false;
+
         if (caixasSelecionadasParaPreparo.some(c => c.toLowerCase() === val.toLowerCase())) {
             msg.style.color = "#e67e22";
             msg.textContent = "Esta caixa já está na lista!";
-            return;
+            return false;
         }
 
         const caixaObj = db.caixas && db.caixas.find(c => c.caixa.toLowerCase() === val.toLowerCase());
         if (!caixaObj) {
             msg.style.color = "#e74c3c";
             msg.textContent = "Caixa não encontrada no sistema!";
-            return;
+            return false;
         }
         if (caixaObj.status !== "Guardada") {
             msg.style.color = "#e74c3c";
             msg.textContent = "Apenas caixas com status 'Guardada' podem ser preparadas!";
-            return;
+            return false;
         }
 
         caixasSelecionadasParaPreparo.push(val);
@@ -2585,8 +2744,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         input.focus();
         msg.textContent = "";
         renderizarCaixasSelecionadas();
+        return true;
     }
-
     function removerCaixaPreparo(idx) {
         caixasSelecionadasParaPreparo.splice(idx, 1);
         renderizarCaixasSelecionadas();
@@ -2610,13 +2769,15 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const datalistCaixas = document.getElementById("listaCaixasParaPreparo");
         if (datalistCaixas && db.caixas) {
             datalistCaixas.innerHTML = "";
+            const fragment = document.createDocumentFragment();
             db.caixas.forEach(c => {
                 if (c.status === "Guardada") {
                     const opt = document.createElement("option");
                     opt.value = c.caixa;
-                    datalistCaixas.appendChild(opt);
+                    fragment.appendChild(opt);
                 }
             });
+            datalistCaixas.appendChild(fragment);
         }
         renderizarCaixasSelecionadas();
     }
@@ -2625,10 +2786,12 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         event.preventDefault();
         const funcionario = document.getElementById("prepFuncionarioSelect").value;
         const msg = document.getElementById("prepMensagem");
+        const btnSubmit = event.target.querySelector("button[type='submit']");
         
         const inputNumCaixa = document.getElementById("prepCaixaNumero").value.trim();
         if (inputNumCaixa && caixasSelecionadasParaPreparo.length === 0) {
-            adicionarCaixaPreparo();
+            const added = adicionarCaixaPreparo();
+            if (added === false) return;
         }
 
         if (caixasSelecionadasParaPreparo.length === 0) {
@@ -2643,62 +2806,72 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             return;
         }
 
-        await carregarDB(true);
+        if (btnSubmit) btnSubmit.disabled = true;
+        msg.style.color = "#3498db";
+        msg.textContent = "Processando... aguarde.";
 
-        let alteradas = 0;
-        let naoEncontradas = [];
+        try {
+            await carregarDB(true);
 
-        for (const numCaixa of caixasSelecionadasParaPreparo) {
-            const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
-            
-            if (idx === -1) {
-                naoEncontradas.push(numCaixa);
-                continue;
-            }
+            let alteradas = 0;
+            let naoEncontradas = [];
 
-            const caixa = db.caixas[idx];
-            const antes = snapshotCaixaParaHistorico(caixa);
-
-            caixa.status = "Preparada";
-            caixa.usuario = funcionario;
-            caixa.dataUpdate = new Date().toLocaleString();
-
-            const mud = extrairMudancasRegistro(antes, caixa);
-            if (mud.length > 0) {
-                if (!Array.isArray(caixa.historico)) caixa.historico = [];
-                let registradoPor = "";
-                try {
-                    const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
-                    registradoPor = u.nome || "Preparador Chefe";
-                } catch(e) {}
+            for (const numCaixa of caixasSelecionadasParaPreparo) {
+                const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
                 
-                caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
-            }
-            alteradas++;
-        }
+                if (idx === -1) {
+                    naoEncontradas.push(numCaixa);
+                    continue;
+                }
 
-        if (alteradas > 0) {
-            await salvarDB();
-            if (typeof confetti === 'function') {
-                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                const caixa = db.caixas[idx];
+                const antes = snapshotCaixaParaHistorico(caixa);
+
+                caixa.status = "Preparada";
+                caixa.usuario = funcionario;
+                caixa.dataUpdate = new Date().toLocaleString();
+
+                const mud = extrairMudancasRegistro(antes, caixa);
+                if (mud.length > 0) {
+                    if (!Array.isArray(caixa.historico)) caixa.historico = [];
+                    let registradoPor = "";
+                    try {
+                        const uStr = sessionStorage.getItem("usuarioLogado");
+                        const u = uStr ? JSON.parse(uStr) : null;
+                        registradoPor = (u && u.nome) ? u.nome : "Preparador Chefe";
+                    } catch(e) {}
+                    
+                    caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
+                }
+                alteradas++;
             }
+
+            if (alteradas > 0) {
+                await salvarDB();
+                if (typeof confetti === 'function') {
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                }
+            }
+            
+            caixasSelecionadasParaPreparo = [];
+            renderizarCaixasSelecionadas();
+            document.getElementById("prepCaixaNumero").value = "";
+            document.getElementById("prepCaixaNumero").focus();
+            
+            if (naoEncontradas.length > 0) {
+                msg.style.color = "#e67e22";
+                msg.textContent = `${alteradas} caixa(s) registrada(s). Não encontradas: ${naoEncontradas.join(', ')}`;
+            } else {
+                msg.style.color = "#27ae60";
+                msg.textContent = `${alteradas} caixa(s) marcada(s) como Preparada(s) por ${funcionario} com sucesso!`;
+            }
+        } catch (error) {
+            console.error(error);
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Erro ao registrar: Verifique o acesso à pasta selecionada e tente novamente.";
+        } finally {
+            if (btnSubmit) btnSubmit.disabled = false;
         }
-        
-        caixasSelecionadasParaPreparo = [];
-        renderizarCaixasSelecionadas();
-        document.getElementById("prepCaixaNumero").value = "";
-        document.getElementById("prepCaixaNumero").focus();
-        
-        if (naoEncontradas.length > 0) {
-            msg.style.color = "#e67e22";
-            msg.textContent = `${alteradas} caixa(s) registrada(s). Não encontradas: ${naoEncontradas.join(', ')}`;
-        } else {
-            msg.style.color = "#27ae60";
-            msg.textContent = `${alteradas} caixa(s) marcada(s) como Preparada(s) por ${funcionario} com sucesso!`;
-        }
-        
-        clearTimeout(window._prepMsgT);
-        window._prepMsgT = setTimeout(() => { msg.textContent = ""; }, 4500);
     }
 
     // ---------------- DIGITALIZAÇÃO DE CAIXAS ----------------
@@ -2723,25 +2896,25 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const input = document.getElementById("digCaixaNumero");
         const msg = document.getElementById("digMensagem");
         const val = input.value.trim();
-        
-        if (!val) return;
-        
+
+        if (!val) return false;
+
         if (caixasSelecionadasParaDigitalizar.some(c => c.toLowerCase() === val.toLowerCase())) {
             msg.style.color = "#e67e22";
             msg.textContent = "Esta caixa já está na lista!";
-            return;
+            return false;
         }
 
         const caixaObj = db.caixas && db.caixas.find(c => c.caixa.toLowerCase() === val.toLowerCase());
         if (!caixaObj) {
             msg.style.color = "#e74c3c";
             msg.textContent = "Caixa não encontrada no sistema!";
-            return;
+            return false;
         }
         if (caixaObj.status !== "Preparada") {
             msg.style.color = "#e74c3c";
             msg.textContent = "Apenas caixas com status 'Preparada' podem ser digitalizadas!";
-            return;
+            return false;
         }
 
         caixasSelecionadasParaDigitalizar.push(val);
@@ -2749,6 +2922,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         input.focus();
         msg.textContent = "";
         renderizarCaixasSelecionadasDig();
+        return true;
     }
 
     function removerCaixaDigitalizacao(idx) {
@@ -2760,110 +2934,223 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         const datalistCaixas = document.getElementById("listaCaixasParaDigitalizar");
         if (datalistCaixas && db.caixas) {
             datalistCaixas.innerHTML = "";
+            const fragment = document.createDocumentFragment();
             db.caixas.forEach(c => {
                 if (c.status === "Preparada") {
                     const opt = document.createElement("option");
                     opt.value = c.caixa;
-                    datalistCaixas.appendChild(opt);
+                    fragment.appendChild(opt);
                 }
             });
+            datalistCaixas.appendChild(fragment);
         }
         renderizarCaixasSelecionadasDig();
     }
 
     async function registrarCaixaDigitalizada(event) {
         event.preventDefault();
-        
+
         let funcionario = "Digitalizador";
         try {
-            const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
+            const uStr = sessionStorage.getItem("usuarioLogado");
+            const u = uStr ? JSON.parse(uStr) : null;
             if (u && u.nome) {
                 funcionario = u.nome;
             }
         } catch(e) {}
 
         const msg = document.getElementById("digMensagem");
-        
+        const btnSubmit = event.target.querySelector("button[type='submit']");
+
         const inputNumCaixa = document.getElementById("digCaixaNumero").value.trim();
         if (inputNumCaixa && caixasSelecionadasParaDigitalizar.length === 0) {
-            adicionarCaixaDigitalizacao();
+            const added = adicionarCaixaDigitalizacao();
+            if (added === false) return; // Validation failed, error msg is already set
         }
+
+        const qtdDocsInput = document.getElementById("digQtdDocs");
+        const totalDocsValue = (qtdDocsInput && qtdDocsInput.value) ? parseInt(qtdDocsInput.value, 10) : 0;
 
         if (caixasSelecionadasParaDigitalizar.length === 0) {
-            msg.style.color = "#e74c3c";
-            msg.textContent = "Adicione ao menos uma caixa para registrar.";
-            return;
-        }
+            if (totalDocsValue > 0) {
+                if (btnSubmit) btnSubmit.disabled = true;
+                msg.style.color = "#3498db";
+                msg.textContent = "Processando registro avulso de documentos... aguarde.";
 
-        await carregarDB(true);
-
-        let alteradas = 0;
-        let naoEncontradas = [];
-
-        for (const numCaixa of caixasSelecionadasParaDigitalizar) {
-            const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
-            
-            if (idx === -1) {
-                naoEncontradas.push(numCaixa);
-                continue;
-            }
-
-            const caixa = db.caixas[idx];
-            const antes = snapshotCaixaParaHistorico(caixa);
-
-            caixa.status = "Digitalizada";
-            caixa.usuario = funcionario;
-            caixa.dataUpdate = new Date().toLocaleString();
-
-            const mud = extrairMudancasRegistro(antes, caixa);
-            if (mud.length > 0) {
-                if (!Array.isArray(caixa.historico)) caixa.historico = [];
-                let registradoPor = "";
                 try {
-                    const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
-                    registradoPor = u.nome || "Digitalizador";
-                } catch(e) {}
-                
-                caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
+                    await carregarDB(true);
+                    
+                    const nomeCaixaAvulsa = `[Avulso] - Doc. ${new Date().getTime().toString().slice(-6)}`;
+                    const novaCaixa = {
+                        caixa: nomeCaixaAvulsa,
+                        status: "Digitalizada",
+                        prateleira: "",
+                        processos: [],
+                        unidade: "",
+                        observacoes: "Registro avulso de documentos digitalizados.",
+                        usuario: funcionario,
+                        dataUpdate: new Date().toLocaleString(),
+                        documentos: totalDocsValue,
+                        historico: []
+                    };
+                    
+                    let registradoPor = "";
+                    try {
+                        const uStr = sessionStorage.getItem("usuarioLogado");
+                        const u = uStr ? JSON.parse(uStr) : null;
+                        registradoPor = (u && u.nome) ? u.nome : "Digitalizador";
+                    } catch(e) {}
+                    
+                    novaCaixa.historico.push({
+                        quandoISO: new Date().toISOString(),
+                        quandoAmigavel: new Date().toLocaleString(),
+                        registradoPor: registradoPor,
+                        acao: "criacao",
+                        detalhes: "Registro Avulso",
+                        mudancas: []
+                    });
+                    
+                    novaCaixa.historico.push({
+                        quandoISO: new Date().toISOString(),
+                        quandoAmigavel: new Date().toLocaleString(),
+                        registradoPor: registradoPor,
+                        acao: "edicao",
+                        detalhes: "Edição de campos",
+                        mudancas: [
+                            { campo: "status", label: "Status", de: "Preparada", para: "Digitalizada" },
+                            { campo: "documentos", label: "Qtd. Documentos", de: "0", para: String(totalDocsValue) }
+                        ]
+                    });
+
+                    db.caixas.push(novaCaixa);
+                    await salvarDB();
+                    
+                    if (typeof confetti === 'function') {
+                        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                    }
+                    
+                    if (qtdDocsInput) qtdDocsInput.value = "";
+                    document.getElementById("digCaixaNumero").value = "";
+                    document.getElementById("digCaixaNumero").focus();
+
+                    msg.style.color = "#27ae60";
+                    msg.textContent = `${totalDocsValue} documento(s) avulso(s) registrado(s) com sucesso!`;
+                } catch (e) {
+                    msg.style.color = "#e74c3c";
+                    msg.textContent = "Erro ao salvar: " + e.message;
+                } finally {
+                    if (btnSubmit) btnSubmit.disabled = false;
+                }
+                return;
+            } else {
+                msg.style.color = "#e74c3c";
+                msg.textContent = "Adicione ao menos uma caixa ou informe a quantidade de documentos.";
+                return;
             }
-            alteradas++;
         }
 
-        if (alteradas > 0) {
-            await salvarDB();
-            if (typeof confetti === 'function') {
-                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+        if (btnSubmit) btnSubmit.disabled = true;
+        msg.style.color = "#3498db";
+        msg.textContent = "Processando... aguarde.";
+
+        try {
+            await carregarDB(true);
+
+            let alteradas = 0;
+            let naoEncontradas = [];
+
+            const qtdDocsInput = document.getElementById("digQtdDocs");
+            let docsPorCaixa = 0;
+            if (qtdDocsInput && qtdDocsInput.value) {
+                const totalDocs = parseInt(qtdDocsInput.value, 10);
+                docsPorCaixa = Math.round(totalDocs / caixasSelecionadasParaDigitalizar.length);
             }
+
+            for (const numCaixa of caixasSelecionadasParaDigitalizar) {
+                const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
+
+                if (idx === -1) {
+                    naoEncontradas.push(numCaixa);
+                    continue;
+                }
+
+                const caixa = db.caixas[idx];
+                const antes = snapshotCaixaParaHistorico(caixa);
+
+                caixa.status = "Digitalizada";
+                caixa.usuario = funcionario;
+                caixa.dataUpdate = new Date().toLocaleString();
+                if (docsPorCaixa > 0) {
+                    caixa.documentos = (caixa.documentos || 0) + docsPorCaixa;
+                }
+
+                const mud = extrairMudancasRegistro(antes, caixa);
+                if (docsPorCaixa > 0) {
+                    mud.push({ campo: "documentos", label: "Qtd. Documentos", de: "0", para: String(docsPorCaixa) });
+                }
+
+                if (mud.length > 0) {
+                    if (!Array.isArray(caixa.historico)) caixa.historico = [];
+                    let registradoPor = "";
+                    try {
+                        const uStr = sessionStorage.getItem("usuarioLogado");
+                        const u = uStr ? JSON.parse(uStr) : null;
+                        registradoPor = (u && u.nome) ? u.nome : "Digitalizador";
+                    } catch(e) {}
+
+                    caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
+                }
+                alteradas++;
+            }
+
+            if (alteradas > 0) {
+                await salvarDB();
+                if (typeof confetti === 'function') {
+                    confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                }
+            }
+
+            caixasSelecionadasParaDigitalizar = [];
+            renderizarCaixasSelecionadasDig();
+            document.getElementById("digCaixaNumero").value = "";
+            const mediaDocsInputReset = document.getElementById("digQtdDocs");
+            if (mediaDocsInputReset) mediaDocsInputReset.value = "";
+            document.getElementById("digCaixaNumero").focus();
+
+            if (naoEncontradas.length > 0) {
+                msg.style.color = "#e67e22";
+                msg.textContent = `${alteradas} caixa(s) registrada(s). Não encontradas: ${naoEncontradas.join(', ')}`;
+            } else {
+                msg.style.color = "#27ae60";
+                msg.textContent = `${alteradas} caixa(s) marcada(s) como Digitalizada(s) por ${funcionario} com sucesso!`;
+            }
+        } catch (error) {
+            console.error(error);
+            msg.style.color = "#e74c3c";
+            msg.textContent = "Ocorreu um erro ao registrar as caixas.";
+        } finally {
+            if (btnSubmit) btnSubmit.disabled = false;
         }
-        
-        caixasSelecionadasParaDigitalizar = [];
-        renderizarCaixasSelecionadasDig();
-        document.getElementById("digCaixaNumero").value = "";
-        document.getElementById("digCaixaNumero").focus();
-        
-        if (naoEncontradas.length > 0) {
-            msg.style.color = "#e67e22";
-            msg.textContent = `${alteradas} caixa(s) registrada(s). Não encontradas: ${naoEncontradas.join(', ')}`;
-        } else {
-            msg.style.color = "#27ae60";
-            msg.textContent = `${alteradas} caixa(s) marcada(s) como Digitalizada(s) por ${funcionario} com sucesso!`;
-        }
-        
+
         clearTimeout(window._digMsgT);
         window._digMsgT = setTimeout(() => { msg.textContent = ""; }, 4500);
     }
-
     // ---------------- RELAÇÃO DE CAIXAS ----------------
     function atualizarTelaRelacao() {
         if (ERP_PAGE_ID !== "relacao") return;
 
         const selProc = document.getElementById("relProcessoSelect");
         const selDig = document.getElementById("relDigitalizadorSelect");
+        const selFiltroDig = document.getElementById("filtroDigitalizadorRel");
+
         if (!selProc || !selDig) return;
 
         // Limpar selects
         selProc.innerHTML = '<option value="">— Selecione o Processo —</option>';
         selDig.innerHTML = '<option value="">— Selecione o Digitalizador —</option>';
+        if (selFiltroDig) {
+            selFiltroDig.innerHTML = '<option value="">Todos</option>';
+        }
 
         // Preencher Processos que possuem caixas preparadas
         const processosComPreparadas = new Set();
@@ -2892,11 +3179,21 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                     opt.value = r.nome;
                     opt.textContent = r.nome + " (" + r.funcao + ")";
                     selDig.appendChild(opt);
+                    
+                    if (selFiltroDig) {
+                        const optFiltro = document.createElement("option");
+                        optFiltro.value = r.nome;
+                        optFiltro.textContent = r.nome;
+                        selFiltroDig.appendChild(optFiltro);
+                    }
                 }
             });
         }
 
         atualizarQuantidadeDisponivel();
+        if (typeof renderizarHistoricoRelacoes === 'function') {
+            renderizarHistoricoRelacoes();
+        }
     }
 
     function atualizarQuantidadeDisponivel() {
@@ -2931,6 +3228,113 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         }
     }
 
+    function renderizarHistoricoRelacoes() {
+        const tbody = document.getElementById("tbodyHistoricoRelacoes");
+        const msgVazio = document.getElementById("historicoRelacoesMsg");
+        
+        if (!tbody || !msgVazio) return;
+
+        const filtroDig = document.getElementById("filtroDigitalizadorRel").value;
+        const filtroDataIni = document.getElementById("filtroDataInicialRel").value;
+        const filtroDataFim = document.getElementById("filtroDataFinalRel").value;
+
+        tbody.innerHTML = "";
+        
+        if (!db.relacoes || db.relacoes.length === 0) {
+            msgVazio.style.display = "block";
+            return;
+        }
+
+        let relacoesFiltradas = db.relacoes.filter(rel => {
+            if (filtroDig && rel.digitalizador !== filtroDig) return false;
+            
+            if (filtroDataIni || filtroDataFim) {
+                const dataRel = new Date(rel.dataISO);
+                dataRel.setHours(0,0,0,0);
+                
+                if (filtroDataIni) {
+                    const dataIni = new Date(filtroDataIni + "T00:00:00");
+                    if (dataRel < dataIni) return false;
+                }
+                if (filtroDataFim) {
+                    const dataFim = new Date(filtroDataFim + "T00:00:00");
+                    if (dataRel > dataFim) return false;
+                }
+            }
+            return true;
+        });
+
+        relacoesFiltradas.sort((a, b) => new Date(b.dataISO) - new Date(a.dataISO));
+
+        if (relacoesFiltradas.length === 0) {
+            msgVazio.style.display = "block";
+            return;
+        }
+
+        msgVazio.style.display = "none";
+
+        relacoesFiltradas.forEach(rel => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${new Date(rel.dataISO).toLocaleDateString()} ${new Date(rel.dataISO).toLocaleTimeString()}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${rel.processo}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${rel.digitalizador}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">${rel.qtdCaixas}</td>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">
+                    <button type="button" onclick="visualizarRelacao('${rel.id}')" style="padding: 5px 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Visualizar</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function limparFiltrosRelacoes() {
+        document.getElementById("filtroDigitalizadorRel").value = "";
+        document.getElementById("filtroDataInicialRel").value = "";
+        document.getElementById("filtroDataFinalRel").value = "";
+        renderizarHistoricoRelacoes();
+    }
+
+    window.visualizarRelacao = function(id) {
+        const rel = db.relacoes.find(r => r.id === id);
+        if (!rel) return;
+
+        let html = `<h3>Relação de Caixas para Digitalização</h3>
+            <p><strong>Digitalizador Destino:</strong> ${rel.digitalizador}</p>
+            <p><strong>Processo:</strong> ${rel.processo}</p>
+            <p><strong>Data:</strong> ${new Date(rel.dataISO).toLocaleDateString()} ${new Date(rel.dataISO).toLocaleTimeString()}</p>
+            <table class="tabela" style="width: 100%; text-align: left; border-collapse: collapse;">
+                <thead><tr style="background-color: #ecf0f1;"><th style="padding: 8px;">Caixa</th><th style="padding: 8px;">Unidade</th><th style="padding: 8px;">Localização</th></tr></thead>
+                <tbody>`;
+        
+        rel.caixas.forEach(numeroCaixa => {
+            const c = db.caixas.find(cx => cx.caixa === numeroCaixa);
+            const unidade = c ? c.unidade : '—';
+            const local = c ? formatarLocalCaixa(c) : '—';
+
+            html += `<tr>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">${numeroCaixa}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">${unidade}</td>
+                <td style="padding: 8px; border-bottom: 1px solid #eee;">${local}</td>
+            </tr>`;
+        });
+        
+        html += `</tbody></table><br>
+        <div style="margin-top:20px; text-align: right;">
+            <button onclick="window.print()" style="padding:10px 15px; background:#3498db; color:#fff; border:none; border-radius:4px; cursor:pointer; margin-right: 10px;">Imprimir Relação</button> 
+            <button onclick="fecharModal()" style="padding:10px 15px; background:#7f8c8d; color:#fff; border:none; border-radius:4px; cursor:pointer;">Fechar</button>
+        </div>`;
+        
+        const mb = document.querySelector("#modal .modalBox");
+        if(mb) {
+            mb.innerHTML = html;
+            abrirModal();
+        }
+    };
+
+    window.renderizarHistoricoRelacoes = renderizarHistoricoRelacoes;
+    window.limparFiltrosRelacoes = limparFiltrosRelacoes;
+
     async function gerarRelacao(event) {
         event.preventDefault();
         const proc = document.getElementById("relProcessoSelect").value;
@@ -2959,8 +3363,9 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         let alteradas = 0;
         let uLogadoNome = "Administrador";
         try {
-            const u = JSON.parse(sessionStorage.getItem("usuarioLogado"));
-            uLogadoNome = u.nome || "Administrador";
+            const uStr = sessionStorage.getItem("usuarioLogado");
+            const u = uStr ? JSON.parse(uStr) : null;
+            uLogadoNome = (u && u.nome) ? u.nome : "Administrador";
         } catch(e) {}
 
         for (let c of caixasSelecionadas) {
@@ -2977,10 +3382,22 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             alteradas++;
         }
 
+        const novaRelacao = {
+            id: Date.now().toString(),
+            dataISO: new Date().toISOString(),
+            processo: proc,
+            digitalizador: dig,
+            qtdCaixas: caixasSelecionadas.length,
+            caixas: caixasSelecionadas.map(c => c.caixa)
+        };
+        db.relacoes.push(novaRelacao);
+
         await salvarDB();
         
         msg.style.color = "#27ae60";
         msg.textContent = `Relação gerada com sucesso! ${alteradas} caixas atribuídas a ${dig}.`;
+        
+        renderizarHistoricoRelacoes();
 
         // Gerar relatório para impressão
         let html = `<h3>Relação de Caixas para Digitalização</h3>
@@ -2988,15 +3405,25 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             <p><strong>Processo:</strong> ${proc}</p>
             <p><strong>Data:</strong> ${new Date().toLocaleDateString()}</p>
             <table class="tabela">
-                <thead><tr><th>Caixa</th><th>Unidade</th><th>Data Início</th><th>Status</th></tr></thead>
+                <thead><tr><th>Caixa</th><th>Unidade</th><th>Localização</th><th>Data de Criação</th></tr></thead>
                 <tbody>`;
         
         caixasSelecionadas.forEach(c => {
+            let dataCriacao = "—";
+            if (Array.isArray(c.historico) && c.historico.length > 0) {
+                const criacaoHist = c.historico.find(h => h.tipo === "criacao" || h.acao === "criacao");
+                if (criacaoHist && criacaoHist.quandoISO) {
+                    dataCriacao = new Date(criacaoHist.quandoISO).toLocaleString("pt-BR");
+                } else if (c.historico[0].quandoISO) {
+                    dataCriacao = new Date(c.historico[0].quandoISO).toLocaleString("pt-BR");
+                }
+            }
+            
             html += `<tr>
                 <td>${c.caixa}</td>
                 <td>${c.unidade || '—'}</td>
-                <td>${c.inicio || '—'}</td>
-                <td>${c.status}</td>
+                <td>${formatarLocalCaixa(c)}</td>
+                <td>${dataCriacao}</td>
             </tr>`;
         });
         
@@ -3005,7 +3432,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             <button onclick="window.print()" style="padding:10px 15px; background:#3498db; color:#fff; border:none; border-radius:4px; cursor:pointer;">Imprimir Relação</button> 
             <button onclick="fecharModal()" style="padding:10px 15px; background:#7f8c8d; color:#fff; border:none; border-radius:4px; cursor:pointer;">Fechar</button>
         </div>`;
-        abrirModal(html);
+        const mb = document.querySelector("#modal .modalBox");
+        if(mb) mb.classList.add("modal-wide");
+        document.getElementById("modalConteudo").innerHTML = html;
+        document.getElementById("modal").style.display = "flex";
 
         // Reset
         document.getElementById("relProcessoSelect").value = "";

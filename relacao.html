@@ -119,6 +119,46 @@
     </form>
 </div>
 
+<div class="relacao-container" style="max-width: 800px; margin-top: 20px;">
+    <h2 style="margin-top:0; color:#2c3e50;">🕒 Histórico de Relações</h2>
+    
+    <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: center; flex-wrap: wrap;">
+        <div>
+            <label for="filtroDigitalizadorRel" style="font-weight: bold; margin-right: 5px; color: #2c3e50;">Digitalizador:</label>
+            <select id="filtroDigitalizadorRel" onchange="renderizarHistoricoRelacoes()" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                <option value="">Todos</option>
+            </select>
+        </div>
+        <div>
+            <label for="filtroDataInicialRel" style="font-weight: bold; margin-right: 5px; color: #2c3e50;">Data Inicial:</label>
+            <input type="date" id="filtroDataInicialRel" onchange="renderizarHistoricoRelacoes()" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <div>
+            <label for="filtroDataFinalRel" style="font-weight: bold; margin-right: 5px; color: #2c3e50;">Data Final:</label>
+            <input type="date" id="filtroDataFinalRel" onchange="renderizarHistoricoRelacoes()" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+        </div>
+        <button type="button" onclick="limparFiltrosRelacoes()" style="padding: 8px 15px; background-color: #95a5a6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Limpar</button>
+    </div>
+
+    <div style="overflow-x: auto;">
+        <table class="tabela" id="tabelaHistoricoRelacoes" style="width: 100%; text-align: left; border-collapse: collapse;">
+            <thead>
+                <tr style="background-color: #ecf0f1;">
+                    <th style="padding: 10px; border-bottom: 2px solid #bdc3c7;">Data</th>
+                    <th style="padding: 10px; border-bottom: 2px solid #bdc3c7;">Processo</th>
+                    <th style="padding: 10px; border-bottom: 2px solid #bdc3c7;">Digitalizador</th>
+                    <th style="padding: 10px; border-bottom: 2px solid #bdc3c7;">Qtd. Caixas</th>
+                    <th style="padding: 10px; border-bottom: 2px solid #bdc3c7;">Ações</th>
+                </tr>
+            </thead>
+            <tbody id="tbodyHistoricoRelacoes">
+                <!-- Preenchido via JS -->
+            </tbody>
+        </table>
+    </div>
+    <div id="historicoRelacoesMsg" style="margin-top: 15px; color: #7f8c8d; font-style: italic;">Nenhuma relação encontrada.</div>
+</div>
+
 <div class="modal" id="modal"><div class="modalBox" id="modalConteudo"></div></div>
 
 <script>window.ERP_PAGE_ID = "relacao";</script>
