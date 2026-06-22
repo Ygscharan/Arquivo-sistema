@@ -59,6 +59,16 @@
             color: #7f8c8d;
             margin-top: 5px;
         }
+        .rel-qtd-aviso {
+            font-size: 14px;
+            color: #c0392b;
+            margin-top: 8px;
+            padding: 10px 12px;
+            background: #fdecea;
+            border: 1px solid #f5c6cb;
+            border-radius: 4px;
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
@@ -103,7 +113,8 @@
 
         <div>
             <label for="relQtdInput">Quantidade de Caixas:</label>
-            <input type="number" id="relQtdInput" min="1" placeholder="Ex.: 10" required disabled>
+            <input type="number" id="relQtdInput" min="1" placeholder="Ex.: 10" required disabled oninput="validarQuantidadeRelacao()">
+            <div id="relQtdAviso" class="rel-qtd-aviso" style="display: none;" role="alert"></div>
         </div>
 
         <div>
@@ -125,17 +136,17 @@
     <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; justify-content: center; flex-wrap: wrap;">
         <div>
             <label for="filtroDigitalizadorRel" style="font-weight: bold; margin-right: 5px; color: #2c3e50;">Digitalizador:</label>
-            <select id="filtroDigitalizadorRel" onchange="renderizarHistoricoRelacoes()" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <select id="filtroDigitalizadorRel" onchange="renderizarHistoricoRelacoes(true)" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
                 <option value="">Todos</option>
             </select>
         </div>
         <div>
             <label for="filtroDataInicialRel" style="font-weight: bold; margin-right: 5px; color: #2c3e50;">Data Inicial:</label>
-            <input type="date" id="filtroDataInicialRel" onchange="renderizarHistoricoRelacoes()" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="date" id="filtroDataInicialRel" onchange="renderizarHistoricoRelacoes(true)" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
         </div>
         <div>
             <label for="filtroDataFinalRel" style="font-weight: bold; margin-right: 5px; color: #2c3e50;">Data Final:</label>
-            <input type="date" id="filtroDataFinalRel" onchange="renderizarHistoricoRelacoes()" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+            <input type="date" id="filtroDataFinalRel" onchange="renderizarHistoricoRelacoes(true)" style="padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
         </div>
         <button type="button" onclick="limparFiltrosRelacoes()" style="padding: 8px 15px; background-color: #95a5a6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Limpar</button>
     </div>
@@ -156,6 +167,7 @@
             </tbody>
         </table>
     </div>
+    <div id="paginacaoRelacoesContainer" class="paginacao-container"></div>
     <div id="historicoRelacoesMsg" style="margin-top: 15px; color: #7f8c8d; font-style: italic;">Nenhuma relação encontrada.</div>
 </div>
 
