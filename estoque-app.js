@@ -44,12 +44,72 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         }
     }
     
+    window.fazerLogoff = function() {
+        if (confirm("Deseja realmente sair do sistema?")) {
+            sessionStorage.removeItem("usuarioLogado");
+            window.location.replace("login.html");
+        }
+    };
+
+    function atualizarHeaderUsuario() {
+        if (ERP_PAGE_ID === "login") return;
+        
+        const menu = document.getElementById('menu');
+        if (menu && !document.getElementById('btnMenuSair')) {
+            const btnSair = document.createElement('button');
+            btnSair.id = 'btnMenuSair';
+            btnSair.type = 'button';
+            btnSair.className = 'btn-logoff-menu';
+            btnSair.innerHTML = '🚪 Sair do Sistema';
+            btnSair.onclick = window.fazerLogoff;
+            menu.appendChild(btnSair);
+        }
+
+        const usuarioLogadoStr = sessionStorage.getItem("usuarioLogado");
+        if (usuarioLogadoStr && usuarioLogadoStr !== "admin_provisorio") {
+            try {
+                const u = JSON.parse(usuarioLogadoStr);
+                const nomeParaExibir = u.apelido || u.nome;
+                if (nomeParaExibir) {
+                    const headers = document.querySelectorAll('header > div:first-child');
+                    headers.forEach(header => {
+                        if (!header.querySelector('.user-greeting')) {
+                            const span = document.createElement('span');
+                            span.className = 'user-greeting';
+                            span.style.marginLeft = '8px';
+                            span.textContent = `— Olá, ${nomeParaExibir} `;
+                            
+                            const linkSair = document.createElement('a');
+                            linkSair.href = '#';
+                            linkSair.textContent = '🚪 Sair';
+                            linkSair.className = 'link-logoff-header';
+                            linkSair.onclick = function(e) {
+                                e.preventDefault();
+                                window.fazerLogoff();
+                            };
+                            span.appendChild(linkSair);
+
+                            const syncLabel = header.querySelector('#syncLabel');
+                            if (syncLabel) {
+                                header.insertBefore(span, syncLabel);
+                            } else {
+                                header.appendChild(span);
+                            }
+                        }
+                    });
+                }
+            } catch(e) {}
+        }
+    }
+
     verificarSessao();
+    atualizarHeaderUsuario();
     
     // Proteção adicional para quando o usuário usa os botões de voltar/avançar do navegador (evita exibir página em cache)
     window.addEventListener("pageshow", function(event) {
         if (event.persisted) { // se a página foi carregada do cache
             verificarSessao();
+            atualizarHeaderUsuario();
         }
     });
 
@@ -377,7 +437,14 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         try{
             const arquivo = await pastaHandle.getFileHandle("banco_erp.json",{create:true});
             const file = await arquivo.getFile();
+            
+            // OTIMIZAÇÃO: Evita ler o arquivo inteiro (megabytes) se ele não foi modificado
+            if (window.lastFileModified && window.lastFileModified === file.lastModified) {
+                return; // Nenhuma alteração no disco
+            }
+            
             const texto = await file.text();
+            window.lastFileModified = file.lastModified;
 
             if (texto !== lastHash) {
                 lastHash = texto;
@@ -396,10 +463,14 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                 
                 garantirHistoricoCaixas();
                 normalizarEliminadasELocaisAvulsos();
-                atualizarInterface();
+                
+                if (!silencioso) {
+                    atualizarInterface();
+                }
+                
                 const slSync = document.getElementById("syncLabel");
                 if(slSync) slSync.innerText = "Sinc.: " + new Date().toLocaleTimeString();
-                if(ERP_PAGE_ID === "lancamento") aplicarEdicaoSeNecessario();
+                if(ERP_PAGE_ID === "lancamento" && !silencioso) aplicarEdicaoSeNecessario();
             }
         }catch(err){ console.error(err); }
     }
@@ -407,10 +478,15 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     async function salvarDB(){
         const arquivo = await pastaHandle.getFileHandle("banco_erp.json",{create:true});
         const writable = await arquivo.createWritable();
-        const conteudo = JSON.stringify(db, null, 2);
+        // OTIMIZAÇÃO: Remover 'null, 2' diminui o tamanho do arquivo em até 70%, acelerando muito a gravação
+        const conteudo = JSON.stringify(db);
         await writable.write(conteudo);
         await writable.close();
         lastHash = conteudo;
+        
+        // Atualiza a data de modificação para não recarregar atoa no próximo clique
+        const file = await arquivo.getFile();
+        window.lastFileModified = file.lastModified;
     }
 
     // ---------------- GESTÃO DE PRATELEIRAS ----------------
@@ -2649,19 +2725,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
             });
         }
 
+        // Otimização: Remoção da carga pesada do datalist
         const datalistCaixas = document.getElementById("listaCaixasParaPreparo");
-        if (datalistCaixas && db.caixas) {
-            datalistCaixas.innerHTML = "";
-            const fragment = document.createDocumentFragment();
-            db.caixas.forEach(c => {
-                if (c.status === "Guardada") {
-                    const opt = document.createElement("option");
-                    opt.value = c.caixa;
-                    fragment.appendChild(opt);
-                }
-            });
-            datalistCaixas.appendChild(fragment);
-        }
+        if (datalistCaixas) datalistCaixas.innerHTML = "";
+        
         renderizarCaixasSelecionadas();
     }
 
@@ -2814,19 +2881,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     }
 
     function atualizarTelaDigitalizacao() {
+        // Otimização: Remoção da carga pesada do datalist
         const datalistCaixas = document.getElementById("listaCaixasParaDigitalizar");
-        if (datalistCaixas && db.caixas) {
-            datalistCaixas.innerHTML = "";
-            const fragment = document.createDocumentFragment();
-            db.caixas.forEach(c => {
-                if (c.status === "Preparada") {
-                    const opt = document.createElement("option");
-                    opt.value = c.caixa;
-                    fragment.appendChild(opt);
-                }
-            });
-            datalistCaixas.appendChild(fragment);
-        }
+        if (datalistCaixas) datalistCaixas.innerHTML = "";
+        
         renderizarCaixasSelecionadasDig();
     }
 
@@ -3257,8 +3315,9 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
                 <td style="padding: 10px; border-bottom: 1px solid #eee;">${rel.processo}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #eee;">${rel.digitalizador}</td>
                 <td style="padding: 10px; border-bottom: 1px solid #eee;">${rel.qtdCaixas}</td>
-                <td style="padding: 10px; border-bottom: 1px solid #eee;">
-                    <button type="button" onclick="visualizarRelacao('${rel.id}')" style="padding: 5px 10px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Visualizar</button>
+                <td style="padding: 10px; border-bottom: 1px solid #eee; display: flex; gap: 8px; align-items: center;">
+                    <button type="button" onclick="visualizarRelacao('${rel.id}')" style="padding: 6px 12px; background-color: #3498db; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; transition: all 0.2s;">👁️ Visualizar</button>
+                    <button type="button" onclick="editarRelacao('${rel.id}')" style="padding: 6px 12px; background-color: #f39c12; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; transition: all 0.2s;">✏️ Editar</button>
                 </td>
             `;
             tbody.appendChild(tr);
@@ -3348,6 +3407,268 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
         if (mb) mb.classList.add("modal-wide");
         document.getElementById("modalConteudo").innerHTML = html;
         document.getElementById("modal").style.display = "flex";
+    };
+
+    window.relacaoEmEdicao = null;
+
+    window.editarRelacao = function(id) {
+        const rel = db.relacoes.find(r => r.id === id);
+        if (!rel) return;
+        
+        // Clona a relação para edição temporária
+        window.relacaoEmEdicao = JSON.parse(JSON.stringify(rel));
+        if (!Array.isArray(window.relacaoEmEdicao.caixas)) window.relacaoEmEdicao.caixas = [];
+        
+        window.renderModalEdicaoRelacao();
+    };
+
+    window.renderModalEdicaoRelacao = function() {
+        if (!window.relacaoEmEdicao) return;
+        const rel = window.relacaoEmEdicao;
+
+        // Prepara options de digitalizadores
+        let digOptions = '';
+        if (db.responsaveis) {
+            db.responsaveis.forEach(r => {
+                if (r.funcao === "Digitalizador" || r.funcao === "Administrador") {
+                    const sel = (r.nome === rel.digitalizador) ? 'selected' : '';
+                    digOptions += `<option value="${r.nome}" ${sel}>${r.nome} (${r.funcao})</option>`;
+                }
+            });
+        }
+
+        // Caixas atuais na relação
+        let trsCaixasAtuais = '';
+        rel.caixas.forEach(numeroCaixa => {
+            const c = db.caixas.find(cx => cx.caixa === numeroCaixa);
+            trsCaixasAtuais += `<tr>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${numeroCaixa}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee;">${c ? (c.unidade || '—') : '—'}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee; text-align:right;">
+                    <button type="button" onclick="removerCaixaEditRelacao('${numeroCaixa}')" style="padding:4px 8px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">❌ Remover</button>
+                </td>
+            </tr>`;
+        });
+        if (rel.caixas.length === 0) trsCaixasAtuais = `<tr><td colspan="3" style="padding:8px; text-align:center;">Nenhuma caixa nesta relação.</td></tr>`;
+
+        // Caixas disponíveis para adicionar
+        const emRelacao = obterCaixasEmRelacao();
+        let caixasDisponiveisOptions = '<option value="">— Selecione uma caixa para adicionar —</option>';
+        db.caixas.forEach(c => {
+            // Se está preparada, no mesmo processo, e NÃO está em outra relação (nem nesta, mas verificamos no modal se já está)
+            if (c.status === "Preparada" && Array.isArray(c.processos) && c.processos.includes(rel.processo)) {
+                if (!rel.caixas.includes(c.caixa) && !caixaEstaEmRelacao(c.caixa, emRelacao)) {
+                    caixasDisponiveisOptions += `<option value="${c.caixa}">${c.caixa} (Unidade: ${c.unidade || '—'})</option>`;
+                }
+            }
+        });
+
+        let html = `<h3>Edição de Relação</h3>
+            <p><strong>ID/Data:</strong> ${new Date(rel.dataISO).toLocaleString()} <span style="float:right; color:#7f8c8d;">Processo: ${rel.processo}</span></p>
+            <div style="margin-bottom: 15px;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px;">Digitalizador Responsável:</label>
+                <select id="editRelDig" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+                    ${digOptions}
+                </select>
+            </div>
+            
+            <div style="margin-bottom: 15px; background:#f9f9f9; padding:10px; border-radius:6px; border:1px solid #ddd;">
+                <label style="font-weight:bold; display:block; margin-bottom:5px;">Adicionar Caixa à Relação:</label>
+                <div style="display:flex; gap:10px;">
+                    <select id="editRelNovaCaixa" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px;">
+                        ${caixasDisponiveisOptions}
+                    </select>
+                    <button type="button" onclick="adicionarCaixaEditRelacao()" style="padding:8px 15px; background:#2ecc71; color:white; border:none; border-radius:4px; cursor:pointer;">Adicionar</button>
+                </div>
+            </div>
+
+            <label style="font-weight:bold; display:block; margin-bottom:5px;">Caixas na Relação (${rel.caixas.length}):</label>
+            <table class="tabela" style="width:100%; text-align:left; border-collapse:collapse; margin-bottom:15px;">
+                <thead>
+                    <tr style="background:#eee;">
+                        <th style="padding:8px; border-bottom:2px solid #ddd;">Caixa</th>
+                        <th style="padding:8px; border-bottom:2px solid #ddd;">Unidade</th>
+                        <th style="padding:8px; border-bottom:2px solid #ddd; text-align:right;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>${trsCaixasAtuais}</tbody>
+            </table>
+            
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px; padding-top:15px; border-top:1px solid #eee;">
+                <button type="button" onclick="excluirRelacaoDefinitiva('${rel.id}')" style="padding:10px 15px; background:#e74c3c; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">🗑️ Excluir Relação</button>
+                <div style="display:flex; gap:10px;">
+                    <button type="button" onclick="fecharModal()" style="padding:10px 15px; background:#95a5a6; color:white; border:none; border-radius:4px; cursor:pointer;">Cancelar</button>
+                    <button type="button" onclick="salvarEdicaoRelacao()" style="padding:10px 15px; background:#27ae60; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">💾 Salvar Alterações</button>
+                </div>
+            </div>
+        `;
+
+        const mb = document.querySelector("#modal .modalBox");
+        if (mb) mb.classList.add("modal-wide");
+        document.getElementById("modalConteudo").innerHTML = html;
+        document.getElementById("modal").style.display = "flex";
+    };
+
+    window.removerCaixaEditRelacao = function(numeroCaixa) {
+        if (!window.relacaoEmEdicao) return;
+        window.relacaoEmEdicao.caixas = window.relacaoEmEdicao.caixas.filter(c => c !== numeroCaixa);
+        
+        // Precisamos atualizar o Digitalizador do select antes de re-renderizar
+        const selDig = document.getElementById("editRelDig");
+        if (selDig) window.relacaoEmEdicao.digitalizador = selDig.value;
+
+        window.renderModalEdicaoRelacao();
+    };
+
+    window.adicionarCaixaEditRelacao = function() {
+        if (!window.relacaoEmEdicao) return;
+        const selCaixa = document.getElementById("editRelNovaCaixa");
+        if (!selCaixa || !selCaixa.value) return;
+
+        window.relacaoEmEdicao.caixas.push(selCaixa.value);
+        
+        // Preserva o digitalizador selecionado atualmente
+        const selDig = document.getElementById("editRelDig");
+        if (selDig) window.relacaoEmEdicao.digitalizador = selDig.value;
+
+        window.renderModalEdicaoRelacao();
+    };
+
+    window.salvarEdicaoRelacao = async function() {
+        if (!window.relacaoEmEdicao) return;
+        const selDig = document.getElementById("editRelDig");
+        if (selDig) window.relacaoEmEdicao.digitalizador = selDig.value;
+        window.relacaoEmEdicao.qtdCaixas = window.relacaoEmEdicao.caixas.length;
+
+        const originalIdx = db.relacoes.findIndex(r => r.id === window.relacaoEmEdicao.id);
+        if (originalIdx === -1) return;
+        const originalRel = db.relacoes[originalIdx];
+
+        let uLogadoNome = "Administrador";
+        try {
+            const uStr = sessionStorage.getItem("usuarioLogado");
+            const u = uStr ? JSON.parse(uStr) : null;
+            uLogadoNome = (u && u.nome) ? u.nome : "Administrador";
+        } catch(e) {}
+
+        const novoDigitalizador = window.relacaoEmEdicao.digitalizador;
+        const caixasAntes = new Set(originalRel.caixas);
+        const caixasDepois = new Set(window.relacaoEmEdicao.caixas);
+
+        // Atualizar histórico e propriedades das caixas removidas
+        caixasAntes.forEach(numCaixa => {
+            if (!caixasDepois.has(numCaixa)) {
+                const c = db.caixas.find(cx => cx.caixa === numCaixa);
+                if (c) {
+                    const antes = snapshotCaixaParaHistorico(c);
+                    c.usuario = ""; // Retira o digitalizador pois voltou pra lista
+                    c.dataUpdate = new Date().toLocaleString();
+                    const mud = extrairMudancasRegistro(antes, c);
+                    if (!Array.isArray(c.historico)) c.historico = [];
+                    c.historico.push(criarEntradaHistorico("edicao", mud, uLogadoNome));
+                    c.historico.push({
+                        quandoISO: new Date().toISOString(),
+                        quandoAmigavel: new Date().toLocaleString(),
+                        registradoPor: uLogadoNome,
+                        acao: "remocao_relacao",
+                        detalhes: "Removida da relação " + originalRel.id,
+                        mudancas: []
+                    });
+                }
+            }
+        });
+
+        // Atualizar histórico e propriedades das caixas novas/mantidas
+        caixasDepois.forEach(numCaixa => {
+            const c = db.caixas.find(cx => cx.caixa === numCaixa);
+            if (c) {
+                const isNova = !caixasAntes.has(numCaixa);
+                const digitalizadorMudou = (originalRel.digitalizador !== novoDigitalizador);
+                
+                if (isNova || digitalizadorMudou) {
+                    const antes = snapshotCaixaParaHistorico(c);
+                    c.usuario = novoDigitalizador;
+                    c.dataUpdate = new Date().toLocaleString();
+                    const mud = extrairMudancasRegistro(antes, c);
+                    if (!Array.isArray(c.historico)) c.historico = [];
+                    if (mud.length > 0) c.historico.push(criarEntradaHistorico("edicao", mud, uLogadoNome));
+
+                    if (isNova) {
+                        c.historico.push({
+                            quandoISO: new Date().toISOString(),
+                            quandoAmigavel: new Date().toLocaleString(),
+                            registradoPor: uLogadoNome,
+                            acao: "adicao_relacao",
+                            detalhes: "Adicionada à relação " + originalRel.id,
+                            mudancas: []
+                        });
+                    } else if (digitalizadorMudou) {
+                        c.historico.push({
+                            quandoISO: new Date().toISOString(),
+                            quandoAmigavel: new Date().toLocaleString(),
+                            registradoPor: uLogadoNome,
+                            acao: "transferencia_relacao",
+                            detalhes: "Transferida de " + originalRel.digitalizador + " para " + novoDigitalizador,
+                            mudancas: []
+                        });
+                    }
+                }
+            }
+        });
+
+        // Aplica a relação alterada no db
+        db.relacoes[originalIdx] = window.relacaoEmEdicao;
+
+        await salvarDB();
+        fecharModal();
+        renderizarHistoricoRelacoes(true);
+        alert("Relação atualizada com sucesso!");
+    };
+
+    window.excluirRelacaoDefinitiva = async function(id) {
+        if (!confirm("Atenção! Esta ação desfará a relação atual. As caixas voltarão a ficar disponíveis. Deseja realmente excluir a relação?")) return;
+        
+        const originalIdx = db.relacoes.findIndex(r => r.id === id);
+        if (originalIdx === -1) return;
+        const rel = db.relacoes[originalIdx];
+
+        let uLogadoNome = "Administrador";
+        try {
+            const uStr = sessionStorage.getItem("usuarioLogado");
+            const u = uStr ? JSON.parse(uStr) : null;
+            uLogadoNome = (u && u.nome) ? u.nome : "Administrador";
+        } catch(e) {}
+
+        // Atualizar histórico de todas as caixas que estavam na relação
+        if (Array.isArray(rel.caixas)) {
+            rel.caixas.forEach(numCaixa => {
+                const c = db.caixas.find(cx => cx.caixa === numCaixa);
+                if (c) {
+                    const antes = snapshotCaixaParaHistorico(c);
+                    c.usuario = ""; 
+                    c.dataUpdate = new Date().toLocaleString();
+                    const mud = extrairMudancasRegistro(antes, c);
+                    if (!Array.isArray(c.historico)) c.historico = [];
+                    c.historico.push(criarEntradaHistorico("edicao", mud, uLogadoNome));
+                    c.historico.push({
+                        quandoISO: new Date().toISOString(),
+                        quandoAmigavel: new Date().toLocaleString(),
+                        registradoPor: uLogadoNome,
+                        acao: "exclusao_relacao",
+                        detalhes: "Relação excluída",
+                        mudancas: []
+                    });
+                }
+            });
+        }
+
+        // Remove a relação
+        db.relacoes.splice(originalIdx, 1);
+        
+        await salvarDB();
+        fecharModal();
+        renderizarHistoricoRelacoes(true);
+        alert("Relação excluída com sucesso.");
     };
 
     window.renderizarHistoricoRelacoes = renderizarHistoricoRelacoes;
