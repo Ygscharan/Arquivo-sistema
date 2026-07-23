@@ -1,8 +1,5 @@
-let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsaveis: [], relacoes: [] };
+let db = { caixas: [], prateleiras: [], processos: [], unidades: [] };
     let edit=null, pastaHandle, lastHash = "";
-    let editBoxFull = null;
-    let indexMetadata = { size: 0, lastModified: 0 };
-    let configMetadata = { size: 0, lastModified: 0 };
     
     // --- Variáveis de Controle da Paginação ---
     let paginaAtual = 1;
@@ -23,95 +20,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
     let _dashChart1 = null, _dashChart2 = null;
     let dashProcessoInicializado = false;
     const ERP_PAGE_ID = window.ERP_PAGE_ID || "index";
-
-    let _loadingOverlayCount = 0;
-    let _dashDebounceTimer = null;
-    let caixaIndexPorNome = null;
-    let _documentosIndiceSincronizado = false;
-
-    function garantirOverlayCarregamento(){
-        if(document.getElementById("erpLoadingOverlay")) return;
-        const el = document.createElement("div");
-        el.id = "erpLoadingOverlay";
-        el.setAttribute("role", "alert");
-        el.setAttribute("aria-live", "polite");
-        el.innerHTML = '<div class="erp-loading-box"><div class="erp-loading-spinner"></div><p class="erp-loading-text" id="erpLoadingText">Processando…</p></div>';
-        document.body.appendChild(el);
-    }
-
-    function mostrarCarregamento(texto){
-        garantirOverlayCarregamento();
-        _loadingOverlayCount++;
-        const txt = document.getElementById("erpLoadingText");
-        if(txt) txt.textContent = texto || "Processando…";
-        document.getElementById("erpLoadingOverlay").classList.add("ativo");
-    }
-
-    function esconderCarregamento(){
-        _loadingOverlayCount = Math.max(0, _loadingOverlayCount - 1);
-        if(_loadingOverlayCount === 0){
-            const ov = document.getElementById("erpLoadingOverlay");
-            if(ov) ov.classList.remove("ativo");
-        }
-    }
-
-    async function executarComCarregamento(fn, texto){
-        mostrarCarregamento(texto);
-        try{
-            return await fn();
-        } finally {
-            esconderCarregamento();
-        }
-    }
-
-    function rebuildCaixaIndexMap(){
-        caixaIndexPorNome = new Map();
-        (db.caixas || []).forEach((c, i) => {
-            caixaIndexPorNome.set(String(c.caixa).trim().toLowerCase(), i);
-        });
-    }
-
-    function indiceCaixaPorNome(nome){
-        if(!caixaIndexPorNome) rebuildCaixaIndexMap();
-        return caixaIndexPorNome.get(String(nome).trim().toLowerCase());
-    }
-
-    function criarShortItem(cFull){
-        return {
-            caixa: cFull.caixa,
-            unidade: cFull.unidade || "",
-            validade: cFull.validade || "",
-            prateleira: cFull.prateleira || "",
-            nivel: cFull.nivel || 0,
-            espaco: cFull.espaco || 0,
-            status: cFull.status || "",
-            usuario: cFull.usuario || "",
-            processos: cFull.processos || [],
-            dataUpdate: cFull.dataUpdate || "",
-            documentos: parseInt(cFull.documentos, 10) || 0
-        };
-    }
-
-    function abrirModal(htmlCorpo, opcoes){
-        opcoes = opcoes || {};
-        const modal = document.getElementById("modal");
-        const conteudo = document.getElementById("modalConteudo");
-        if(!modal || !conteudo) return;
-        const mb = document.querySelector("#modal .modalBox");
-        if(mb){
-            if(opcoes.wide !== false) mb.classList.add("modal-wide");
-            else mb.classList.remove("modal-wide");
-        }
-        const footer = opcoes.footer || "";
-        if(footer){
-            conteudo.innerHTML = '<div class="modal-inner"><div class="modal-scroll-body">' + htmlCorpo + '</div><div class="modal-footer-actions">' + footer + '</div></div>';
-        } else if(opcoes.htmlCompleto){
-            conteudo.innerHTML = opcoes.htmlCompleto;
-        } else {
-            conteudo.innerHTML = '<div class="modal-inner"><div class="modal-scroll-body">' + htmlCorpo + '</div></div>';
-        }
-        modal.style.display = "flex";
-    }
 
     // Proteção Imediata: Verifica a sessão e permissões assim que a página carrega
     function verificarSessao() {
@@ -283,12 +191,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         if(ERP_PAGE_ID === "lancamento" && !new URLSearchParams(location.search).has("edit"))
             sessionStorage.removeItem("erpEditParam");
         
-        mostrarCarregamento("Iniciando sistema…");
-        try {
-            await inicializarPasta();
-        } finally {
-            esconderCarregamento();
-        }
+        await inicializarPasta();
 
         verificarAutenticacao();
 
@@ -470,634 +373,46 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         }
     }
 
-    
-    // --- FUNÇÕES AUXILIARES DE CACHE INDEXEDDB E LOCK COOPERATIVO ---
-    const IDB_CACHE_DB = "erp-estoque-cache";
-    const IDB_CACHE_STORE = "index_cache";
-    
-    function abrirCacheIndexedDB() {
-        return new Promise((resolve, reject) => {
-            const req = indexedDB.open(IDB_CACHE_DB, 1);
-            req.onerror = () => reject(req.error);
-            req.onsuccess = () => resolve(req.result);
-            req.onupgradeneeded = (ev) => {
-                const database = ev.target.result;
-                if(!database.objectStoreNames.contains(IDB_CACHE_STORE))
-                    database.createObjectStore(IDB_CACHE_STORE);
-            };
-        });
-    }
-    
-    async function salvarIndexNoCache(list, size, lastModified) {
-        try {
-            const idb = await abrirCacheIndexedDB();
-            await new Promise((resolve, reject) => {
-                const tx = idb.transaction(IDB_CACHE_STORE, "readwrite");
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
-                const store = tx.objectStore(IDB_CACHE_STORE);
-                store.put(list, "caixas_list");
-                store.put({ size, lastModified }, "caixas_metadata");
-            });
-        } catch(e) {
-            console.error("Falha ao salvar cache no IndexedDB:", e);
-        }
-    }
-    
-    async function lerIndexDoCache() {
-        try {
-            const idb = await abrirCacheIndexedDB();
-            const meta = await new Promise((resolve, reject) => {
-                const tx = idb.transaction(IDB_CACHE_STORE, "readonly");
-                const req = tx.objectStore(IDB_CACHE_STORE).get("caixas_metadata");
-                req.onsuccess = () => resolve(req.result || null);
-                req.onerror = () => reject(req.error);
-            });
-            if (!meta) return null;
-            
-            const list = await new Promise((resolve, reject) => {
-                const tx = idb.transaction(IDB_CACHE_STORE, "readonly");
-                const req = tx.objectStore(IDB_CACHE_STORE).get("caixas_list");
-                req.onsuccess = () => resolve(req.result || null);
-                req.onerror = () => reject(req.error);
-            });
-            return { list, meta };
-        } catch(e) {
-            console.error("Falha ao ler cache do IndexedDB:", e);
-            return null;
-        }
-    }
-
-    async function acquireLock(userName) {
-        const lockFileName = "db.lock";
-        const clientId = userName + "_" + Math.random().toString(36).substring(2, 9);
-        const timeout = 8000;
-        const startTime = Date.now();
-        
-        while (Date.now() - startTime < timeout) {
-            try {
-                let lockHandle;
-                try {
-                    lockHandle = await pastaHandle.getFileHandle(lockFileName, { create: false });
-                } catch (e) {
-                    lockHandle = await pastaHandle.getFileHandle(lockFileName, { create: true });
-                }
-                
-                const file = await lockHandle.getFile();
-                const text = await file.text();
-                
-                let isExpired = false;
-                let currentLock = null;
-                if (text) {
-                    try {
-                        currentLock = JSON.parse(text);
-                        if (Date.now() - currentLock.timestamp > 10000) {
-                            isExpired = true;
-                        }
-                    } catch (err) {
-                        isExpired = true; 
-                    }
-                }
-                
-                if (!text || isExpired || (currentLock && currentLock.clientId === clientId)) {
-                    const writable = await lockHandle.createWritable();
-                    await writable.write(JSON.stringify({
-                        clientId: clientId,
-                        userName: userName,
-                        timestamp: Date.now()
-                    }));
-                    await writable.close();
-                    
-                    await new Promise(r => setTimeout(r, 40));
-                    
-                    const verifyFile = await lockHandle.getFile();
-                    const verifyText = await verifyFile.text();
-                    const verifyLock = JSON.parse(verifyText);
-                    if (verifyLock.clientId === clientId) {
-                        return clientId; 
-                    }
-                }
-            } catch (e) {
-                console.warn("Tentativa de lock falhou:", e);
-            }
-            
-            await new Promise(r => setTimeout(r, 80));
-        }
-        throw new Error("O banco de dados está ocupado por outro computador. Aguarde alguns segundos.");
-    }
-
-    async function releaseLock(clientId) {
-        try {
-            const lockHandle = await pastaHandle.getFileHandle("db.lock", { create: false });
-            const file = await lockHandle.getFile();
-            const text = await file.text();
-            if (text) {
-                const currentLock = JSON.parse(text);
-                if (currentLock.clientId === clientId) {
-                    await pastaHandle.removeEntry("db.lock");
-                }
-            }
-        } catch (e) {
-            // Se já foi deletado, ignora
-        }
-    }
-
-    async function carregarDetalhesCaixa(caixa, prateleira, status) {
-        if (!pastaHandle) return null;
-        try {
-            let list = [];
-            if (status === "Eliminada") {
-                const hFile = await pastaHandle.getFileHandle("caixas_eliminadas.json", { create: false });
-                const file = await hFile.getFile();
-                list = JSON.parse(await file.text() || "[]");
-            } else if (!prateleira || !prateleira.trim()) {
-                const hFile = await pastaHandle.getFileHandle("caixas_avulsas.json", { create: false });
-                const file = await hFile.getFile();
-                list = JSON.parse(await file.text() || "[]");
-            } else {
-                const subFolder = await pastaHandle.getDirectoryHandle("caixas_prateleiras", { create: false });
-                const hFile = await subFolder.getFileHandle(`prateleira_${prateleira.trim()}.json`, { create: false });
-                const file = await hFile.getFile();
-                list = JSON.parse(await file.text() || "[]");
-            }
-            return list.find(c => c.caixa === caixa) || null;
-        } catch (e) {
-            console.error("Erro ao carregar detalhes da caixa:", e);
-            return null;
-        }
-    }
-
-    async function migrarBancoDadosSeNecessario(dirHandle) {
-        let oldDbFile;
-        try {
-            oldDbFile = await dirHandle.getFileHandle("banco_erp.json", { create: false });
-        } catch (e) {
-            try {
-                await dirHandle.getFileHandle("config_erp.json", { create: false });
-                return; 
-            } catch (err) {
-                await inicializarNovoBanco(dirHandle);
-                return;
-            }
-        }
-
-        console.log("Banco monolithic banco_erp.json encontrado. Iniciando migração...");
-        const file = await oldDbFile.getFile();
-        const text = await file.text();
-        if (!text) {
-            await inicializarNovoBanco(dirHandle);
-            await dirHandle.removeEntry("banco_erp.json");
-            return;
-        }
-
-        let oldDb;
-        try {
-            oldDb = JSON.parse(text);
-        } catch (e) {
-            console.error("Erro ao analisar banco_erp.json:", e);
-            alert("O arquivo banco_erp.json está corrompido. Um novo banco será criado.");
-            await inicializarNovoBanco(dirHandle);
-            await dirHandle.removeEntry("banco_erp.json");
-            return;
-        }
-
-        const backupHandle = await dirHandle.getFileHandle("banco_erp_backup.json", { create: true });
-        const writableBackup = await backupHandle.createWritable();
-        await writableBackup.write(text);
-        await writableBackup.close();
-
-        const configData = {
-            prateleiras: oldDb.prateleiras || [],
-            processos: oldDb.processos || [],
-            unidades: oldDb.unidades || [],
-            responsaveis: oldDb.responsaveis || [],
-            relacoes: oldDb.relacoes || []
-        };
-        const configHandle = await dirHandle.getFileHandle("config_erp.json", { create: true });
-        const writableConfig = await configHandle.createWritable();
-        await writableConfig.write(JSON.stringify(configData, null, 2));
-        await writableConfig.close();
-
-        const caixas = oldDb.caixas || [];
-        const indexList = [];
-        const prateleirasMap = {};
-        const avulsas = [];
-        const eliminadas = [];
-
-        const subFolder = await dirHandle.getDirectoryHandle("caixas_prateleiras", { create: true });
-
-        for (let c of caixas) {
-            indexList.push({
-                caixa: c.caixa,
-                unidade: c.unidade || "",
-                validade: c.validade || "",
-                prateleira: c.prateleira || "",
-                nivel: c.nivel || 0,
-                espaco: c.espaco || 0,
-                status: c.status || "",
-                usuario: c.usuario || "",
-                processos: c.processos || [],
-                dataUpdate: c.dataUpdate || "",
-                documentos: parseInt(c.documentos, 10) || 0
-            });
-
-            const fullDetail = {
-                caixa: c.caixa,
-                unidade: c.unidade || "",
-                inicio: c.inicio || "",
-                fim: c.fim || "",
-                validade: c.validade || "",
-                prateleira: c.prateleira || "",
-                nivel: c.nivel || 0,
-                espaco: c.espaco || 0,
-                status: c.status || "",
-                usuario: c.usuario || "",
-                processos: c.processos || [],
-                dataUpdate: c.dataUpdate || "",
-                historico: c.historico || []
-            };
-
-            if (c.status === "Eliminada") {
-                eliminadas.push(fullDetail);
-            } else if (!c.prateleira || !c.prateleira.trim()) {
-                avulsas.push(fullDetail);
-            } else {
-                const pNome = c.prateleira.trim();
-                if (!prateleirasMap[pNome]) prateleirasMap[pNome] = [];
-                prateleirasMap[pNome].push(fullDetail);
-            }
-        }
-
-        const indexHandle = await dirHandle.getFileHandle("caixas_index.json", { create: true });
-        const writableIndex = await indexHandle.createWritable();
-        await writableIndex.write(JSON.stringify(indexList));
-        await writableIndex.close();
-
-        for (let pNome of Object.keys(prateleirasMap)) {
-            const fileP = await subFolder.getFileHandle(`prateleira_${pNome}.json`, { create: true });
-            const writableP = await fileP.createWritable();
-            await writableP.write(JSON.stringify(prateleirasMap[pNome]));
-            await writableP.close();
-        }
-
-        const avulsasHandle = await dirHandle.getFileHandle("caixas_avulsas.json", { create: true });
-        const writableAvulsas = await avulsasHandle.createWritable();
-        await writableAvulsas.write(JSON.stringify(avulsas));
-        await writableAvulsas.close();
-
-        const eliminadasHandle = await dirHandle.getFileHandle("caixas_eliminadas.json", { create: true });
-        const writableEliminadas = await eliminadasHandle.createWritable();
-        await writableEliminadas.write(JSON.stringify(eliminadas));
-        await writableEliminadas.close();
-
-        await dirHandle.removeEntry("banco_erp.json");
-        console.log("Migração concluída com sucesso!");
-    }
-
-    async function inicializarNovoBanco(dirHandle) {
-        const configData = { prateleiras: [], processos: [], unidades: [], responsaveis: [], relacoes: [] };
-        const hConfig = await dirHandle.getFileHandle("config_erp.json", { create: true });
-        const wConfig = await hConfig.createWritable();
-        await wConfig.write(JSON.stringify(configData, null, 2));
-        await wConfig.close();
-
-        const hIndex = await dirHandle.getFileHandle("caixas_index.json", { create: true });
-        const wIndex = await hIndex.createWritable();
-        await wIndex.write(JSON.stringify([]));
-        await wIndex.close();
-
-        const hAvulsas = await dirHandle.getFileHandle("caixas_avulsas.json", { create: true });
-        const wAvulsas = await hAvulsas.createWritable();
-        await wAvulsas.write(JSON.stringify([]));
-        await wAvulsas.close();
-
-        const hEliminadas = await dirHandle.getFileHandle("caixas_eliminadas.json", { create: true });
-        const wEliminadas = await hEliminadas.createWritable();
-        await wEliminadas.write(JSON.stringify([]));
-        await wEliminadas.close();
-
-        await dirHandle.getDirectoryHandle("caixas_prateleiras", { create: true });
-    }
-
-    async function sincronizarDocumentosIndiceSeNecessario(){
-        if(!pastaHandle || _documentosIndiceSincronizado) return;
-        const precisa = (db.caixas || []).some(c => c.documentos === undefined || c.documentos === null);
-        if(!precisa){
-            _documentosIndiceSincronizado = true;
-            return;
-        }
-
-        const mapDocs = new Map();
-        async function absorverLista(list){
-            (list || []).forEach(c => {
-                const docs = parseInt(c.documentos, 10) || 0;
-                if(docs > 0) mapDocs.set(String(c.caixa).trim().toLowerCase(), docs);
-            });
-        }
-
-        try {
-            try {
-                const hAv = await pastaHandle.getFileHandle("caixas_avulsas.json", { create: false });
-                absorverLista(JSON.parse(await (await hAv.getFile()).text() || "[]"));
-            } catch(e) {}
-            try {
-                const hEl = await pastaHandle.getFileHandle("caixas_eliminadas.json", { create: false });
-                absorverLista(JSON.parse(await (await hEl.getFile()).text() || "[]"));
-            } catch(e) {}
-
-            const prateleirasUnicas = new Set(
-                (db.caixas || []).filter(c => c.prateleira && String(c.prateleira).trim()).map(c => c.prateleira.trim())
-            );
-            const subFolder = await pastaHandle.getDirectoryHandle("caixas_prateleiras", { create: false });
-            for(const pNome of prateleirasUnicas){
-                try {
-                    const hP = await subFolder.getFileHandle(`prateleira_${pNome}.json`, { create: false });
-                    absorverLista(JSON.parse(await (await hP.getFile()).text() || "[]"));
-                } catch(e) {}
-            }
-
-            let alterou = false;
-            db.caixas.forEach(c => {
-                if(c.documentos === undefined || c.documentos === null){
-                    const chave = String(c.caixa).trim().toLowerCase();
-                    const docs = mapDocs.has(chave) ? mapDocs.get(chave) : 0;
-                    if(c.documentos !== docs){ c.documentos = docs; alterou = true; }
-                }
-            });
-
-            if(alterou){
-                const fileIndexHandle = await pastaHandle.getFileHandle("caixas_index.json", { create: true });
-                const writableIndex = await fileIndexHandle.createWritable();
-                await writableIndex.write(JSON.stringify(db.caixas));
-                await writableIndex.close();
-                const fileIndexNew = await fileIndexHandle.getFile();
-                indexMetadata.size = fileIndexNew.size;
-                indexMetadata.lastModified = fileIndexNew.lastModified;
-                await salvarIndexNoCache(db.caixas, fileIndexNew.size, fileIndexNew.lastModified);
-            }
-        } catch(e){
-            console.warn("Sincronização de documentos no índice:", e);
-        }
-        _documentosIndiceSincronizado = true;
-    }
-
-
     async function carregarDB(silencioso = false){
         if(!pastaHandle) return;
-        const mostrarLoad = !silencioso;
-        if(mostrarLoad) mostrarCarregamento("Carregando dados…");
         try{
-            let oldDbFile = null;
-            try {
-                oldDbFile = await pastaHandle.getFileHandle("banco_erp.json", { create: false });
-            } catch(e) {}
-            if (oldDbFile) {
-                const slSync = document.getElementById("syncLabel");
-                if(slSync) slSync.innerText = "Migrando banco...";
-                await migrarBancoDadosSeNecessario(pastaHandle);
-            }
+            const arquivo = await pastaHandle.getFileHandle("banco_erp.json",{create:true});
+            const file = await arquivo.getFile();
+            const texto = await file.text();
 
-            const fileConfigHandle = await pastaHandle.getFileHandle("config_erp.json", { create: true });
-            const fileConfig = await fileConfigHandle.getFile();
-            
-            if (fileConfig.size !== configMetadata.size || fileConfig.lastModified !== configMetadata.lastModified) {
-                const text = await fileConfig.text();
-                const configParsed = text ? JSON.parse(text) : { prateleiras: [], processos: [], unidades: [], responsaveis: [], relacoes: [] };
+            if (texto !== lastHash) {
+                lastHash = texto;
+                db = texto ? JSON.parse(texto) : { caixas: [], prateleiras: [], processos: [], unidades: [], responsaveis: [], relacoes: [] };
+                if(!db.processos) db.processos = [];
+                if(!db.unidades) db.unidades = [];
+                if(!db.responsaveis) db.responsaveis = [];
+                if(!db.relacoes) db.relacoes = [];
                 
-                db.prateleiras = configParsed.prateleiras || [];
-                db.processos = configParsed.processos || [];
-                db.unidades = configParsed.unidades || [];
-                db.responsaveis = configParsed.responsaveis || [];
-                db.relacoes = configParsed.relacoes || [];
-                
-                configMetadata.size = fileConfig.size;
-                configMetadata.lastModified = fileConfig.lastModified;
-            }
-
-            const fileIndexHandle = await pastaHandle.getFileHandle("caixas_index.json", { create: true });
-            const fileIndex = await fileIndexHandle.getFile();
-
-            if (fileIndex.size !== indexMetadata.size || fileIndex.lastModified !== indexMetadata.lastModified) {
-                const cached = await lerIndexDoCache();
-                if (cached && cached.meta.size === fileIndex.size && cached.meta.lastModified === fileIndex.lastModified) {
-                    db.caixas = cached.list || [];
-                } else {
-                    const text = await fileIndex.text();
-                    db.caixas = text ? JSON.parse(text) : [];
-                    await salvarIndexNoCache(db.caixas, fileIndex.size, fileIndex.lastModified);
-                }
-                
-                indexMetadata.size = fileIndex.size;
-                indexMetadata.lastModified = fileIndex.lastModified;
-                
+                // Normaliza funções antigas para as novas "Preparador" e "Digitalizador"
                 db.responsaveis.forEach(r => {
                     if (r.funcao === "Preparada") r.funcao = "Preparador";
                     else if (r.funcao === "Digitalizada") r.funcao = "Digitalizador";
-                    else if (["Guardada", "Avulsa", "Eliminada"].includes(r.funcao)) r.funcao = "";
+                    else if (["Guardada", "Avulsa", "Eliminada"].includes(r.funcao)) r.funcao = ""; // Remove funções não mapeadas
                 });
                 
                 garantirHistoricoCaixas();
                 normalizarEliminadasELocaisAvulsos();
-                rebuildCaixaIndexMap();
-                await sincronizarDocumentosIndiceSeNecessario();
-                rebuildCaixaIndexMap();
                 atualizarInterface();
                 const slSync = document.getElementById("syncLabel");
                 if(slSync) slSync.innerText = "Sinc.: " + new Date().toLocaleTimeString();
-                if(window.ERP_PAGE_ID === "lancamento") aplicarEdicaoSeNecessario();
+                if(ERP_PAGE_ID === "lancamento") aplicarEdicaoSeNecessario();
             }
         }catch(err){ console.error(err); }
-        finally {
-            if(mostrarLoad) esconderCarregamento();
-        }
     }
 
-    async function salvarDB(opcoes = {}){
-        let lockClientId = null;
-        if(!opcoes.semOverlay) mostrarCarregamento(opcoes.msgCarregamento || "Salvando dados…");
-        try {
-            let userName = "Sistema";
-            try {
-                const uStr = sessionStorage.getItem("usuarioLogado");
-                const u = uStr ? JSON.parse(uStr) : null;
-                userName = (u && u.nome) ? u.nome : "Sistema";
-            } catch(e) {}
-
-            lockClientId = await acquireLock(userName);
-
-            if (opcoes.config) {
-                const configParsed = {
-                    prateleiras: db.prateleiras,
-                    processos: db.processos,
-                    unidades: db.unidades,
-                    responsaveis: db.responsaveis,
-                    relacoes: db.relacoes || []
-                };
-                if (opcoes.relacaoNova) {
-                    configParsed.relacoes.push(opcoes.relacaoNova);
-                }
-
-                const fileConfigHandle = await pastaHandle.getFileHandle("config_erp.json", { create: true });
-                const writableConfig = await fileConfigHandle.createWritable();
-                await writableConfig.write(JSON.stringify(configParsed, null, 2));
-                await writableConfig.close();
-                
-                const fileConfigNew = await fileConfigHandle.getFile();
-                configMetadata.size = fileConfigNew.size;
-                configMetadata.lastModified = fileConfigNew.lastModified;
-                db.relacoes = configParsed.relacoes;
-            }
-
-            if (opcoes.caixas || opcoes.removerCaixas) {
-                const fileIndexHandle = await pastaHandle.getFileHandle("caixas_index.json", { create: true });
-                const fileIndex = await fileIndexHandle.getFile();
-                const text = await fileIndex.text();
-                const indexList = text ? JSON.parse(text) : [];
-                const indexMap = new Map(indexList.map((x, i) => [String(x.caixa).trim().toLowerCase(), i]));
-
-                const subFolder = await pastaHandle.getDirectoryHandle("caixas_prateleiras", { create: true });
-                
-                const prateleirasCarregadas = {};
-                const prateleirasDirty = new Set();
-                let avulsasCarregadas = null;
-                let avulsasDirty = false;
-                let eliminadasCarregadas = null;
-                let eliminadasDirty = false;
-
-                async function obterListaDestino(prateleira, status) {
-                    if (status === "Eliminada") {
-                        if (eliminadasCarregadas === null) {
-                            const fileH = await pastaHandle.getFileHandle("caixas_eliminadas.json", { create: true });
-                            const file = await fileH.getFile();
-                            const txt = await file.text();
-                            eliminadasCarregadas = txt ? JSON.parse(txt) : [];
-                        }
-                        return eliminadasCarregadas;
-                    } else if (!prateleira || !prateleira.trim()) {
-                        if (avulsasCarregadas === null) {
-                            const fileH = await pastaHandle.getFileHandle("caixas_avulsas.json", { create: true });
-                            const file = await fileH.getFile();
-                            const txt = await file.text();
-                            avulsasCarregadas = txt ? JSON.parse(txt) : [];
-                        }
-                        return avulsasCarregadas;
-                    } else {
-                        const pNome = prateleira.trim();
-                        if (!prateleirasCarregadas[pNome]) {
-                            let listP = [];
-                            try {
-                                const fileH = await subFolder.getFileHandle(`prateleira_${pNome}.json`, { create: false });
-                                const file = await fileH.getFile();
-                                const txt = await file.text();
-                                listP = txt ? JSON.parse(txt) : [];
-                            } catch (e) {}
-                            prateleirasCarregadas[pNome] = listP;
-                        }
-                        return prateleirasCarregadas[pNome];
-                    }
-                }
-
-                function marcarDirty(prateleira, status){
-                    if(status === "Eliminada") eliminadasDirty = true;
-                    else if(!prateleira || !String(prateleira).trim()) avulsasDirty = true;
-                    else prateleirasDirty.add(String(prateleira).trim());
-                }
-
-                if (opcoes.removerCaixas) {
-                    for (let cShort of opcoes.removerCaixas) {
-                        const cNome = String(cShort.caixa).trim().toLowerCase();
-                        const idxIdx = indexMap.has(cNome) ? indexMap.get(cNome) : -1;
-                        if (idxIdx !== -1) {
-                            indexList.splice(idxIdx, 1);
-                            indexMap.delete(cNome);
-                            indexList.forEach((x, i) => indexMap.set(String(x.caixa).trim().toLowerCase(), i));
-                        }
-
-                        const listDest = await obterListaDestino(cShort.prateleira, cShort.status);
-                        const idxDest = listDest.findIndex(x => String(x.caixa).trim().toLowerCase() === cNome);
-                        if (idxDest !== -1) {
-                            listDest.splice(idxDest, 1);
-                            marcarDirty(cShort.prateleira, cShort.status);
-                        }
-                    }
-                }
-
-                if (opcoes.caixas) {
-                    for (let cFull of opcoes.caixas) {
-                        const cNome = String(cFull.caixa).trim().toLowerCase();
-                        const idxIdx = indexMap.has(cNome) ? indexMap.get(cNome) : -1;
-                        let oldShort = idxIdx !== -1 ? indexList[idxIdx] : null;
-
-                        if (oldShort && (oldShort.prateleira !== cFull.prateleira || oldShort.status !== cFull.status)) {
-                            const listAntiga = await obterListaDestino(oldShort.prateleira, oldShort.status);
-                            const idxAntigo = listAntiga.findIndex(x => String(x.caixa).trim().toLowerCase() === cNome);
-                            if (idxAntigo !== -1) {
-                                listAntiga.splice(idxAntigo, 1);
-                                marcarDirty(oldShort.prateleira, oldShort.status);
-                            }
-                        }
-
-                        const listNova = await obterListaDestino(cFull.prateleira, cFull.status);
-                        const idxNova = listNova.findIndex(x => String(x.caixa).trim().toLowerCase() === cNome);
-                        if (idxNova !== -1) {
-                            listNova[idxNova] = cFull;
-                        } else {
-                            listNova.push(cFull);
-                        }
-                        marcarDirty(cFull.prateleira, cFull.status);
-
-                        const shortItem = criarShortItem(cFull);
-
-                        if (idxIdx !== -1) {
-                            indexList[idxIdx] = shortItem;
-                        } else {
-                            indexList.push(shortItem);
-                            indexMap.set(cNome, indexList.length - 1);
-                        }
-                    }
-                }
-
-                for (let pNome of prateleirasDirty) {
-                    if (!prateleirasCarregadas[pNome]) continue;
-                    const fileH = await subFolder.getFileHandle(`prateleira_${pNome}.json`, { create: true });
-                    const writable = await fileH.createWritable();
-                    await writable.write(JSON.stringify(prateleirasCarregadas[pNome]));
-                    await writable.close();
-                }
-
-                if (avulsasDirty && avulsasCarregadas !== null) {
-                    const fileH = await pastaHandle.getFileHandle("caixas_avulsas.json", { create: true });
-                    const writable = await fileH.createWritable();
-                    await writable.write(JSON.stringify(avulsasCarregadas));
-                    await writable.close();
-                }
-
-                if (eliminadasDirty && eliminadasCarregadas !== null) {
-                    const fileH = await pastaHandle.getFileHandle("caixas_eliminadas.json", { create: true });
-                    const writable = await fileH.createWritable();
-                    await writable.write(JSON.stringify(eliminadasCarregadas));
-                    await writable.close();
-                }
-
-                const writableIndex = await fileIndexHandle.createWritable();
-                await writableIndex.write(JSON.stringify(indexList));
-                await writableIndex.close();
-
-                const fileIndexNew = await fileIndexHandle.getFile();
-                db.caixas = indexList;
-                indexMetadata.size = fileIndexNew.size;
-                indexMetadata.lastModified = fileIndexNew.lastModified;
-                rebuildCaixaIndexMap();
-                await salvarIndexNoCache(db.caixas, fileIndexNew.size, fileIndexNew.lastModified);
-            }
-        } finally {
-            if (lockClientId) {
-                await releaseLock(lockClientId);
-            }
-            if(!opcoes.semOverlay) esconderCarregamento();
-        }
+    async function salvarDB(){
+        const arquivo = await pastaHandle.getFileHandle("banco_erp.json",{create:true});
+        const writable = await arquivo.createWritable();
+        const conteudo = JSON.stringify(db, null, 2);
+        await writable.write(conteudo);
+        await writable.close();
+        lastHash = conteudo;
     }
-
 
     // ---------------- GESTÃO DE PRATELEIRAS ----------------
     async function adicionarPrateleira(){
@@ -1105,7 +420,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         if(!nome) return;
         if(db.prateleiras.find(p => p.nome === nome)) return alert("Prateleira já existe!");
         db.prateleiras.push({ nome: nome, capacidade: 78 });
-        await salvarDB({ config: true });
+        await salvarDB();
         document.getElementById("nomePrateleiraNova").value = "";
         atualizarInterface();
     }
@@ -1114,7 +429,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         if(db.caixas.some(c => caixaOcupaSlot(c) && c.prateleira === nome)) return alert("Não é possível excluir: há caixas alocadas nesta prateleira!");
         if(confirm(`Excluir prateleira ${nome}?`)){
             db.prateleiras = db.prateleiras.filter(p => p.nome !== nome);
-            await salvarDB({ config: true });
+            await salvarDB();
             atualizarInterface();
         }
     }
@@ -1125,7 +440,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         if(!nome) return;
         if(db.processos.includes(nome)) return alert("Processo já existe!");
         db.processos.push(nome);
-        await salvarDB({ config: true });
+        await salvarDB();
         document.getElementById("nomeProcessoNovo").value = "";
         atualizarInterface();
     }
@@ -1135,7 +450,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             return alert("Não é possível excluir: existem caixas vinculadas a este processo!");
         if(confirm(`Excluir processo ${nome}?`)){
             db.processos = db.processos.filter(p => p !== nome);
-            await salvarDB({ config: true });
+            await salvarDB();
             atualizarInterface();
         }
     }
@@ -1162,7 +477,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         if(jaExiste) return alert("Esta unidade (número ou nome) já existe!");
 
         db.unidades.push({ numero: numero, nome: nome });
-        await salvarDB({ config: true });
+        await salvarDB();
         elNum.value = "";
         elNome.value = "";
         atualizarInterface();
@@ -1178,7 +493,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 if(typeof u === 'string') return u !== identificador;
                 return u.numero !== identificador && u.nome !== identificador;
             });
-            await salvarDB({ config: true });
+            await salvarDB();
             atualizarInterface();
         }
     }
@@ -1239,7 +554,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
         db.responsaveis.push({ nome, apelido, funcao, login, usuario, senha });
 
-        await salvarDB({ config: true });
+        await salvarDB();
         
         elNome.value = "";
         elApelido.value = "";
@@ -1254,7 +569,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
         const needsLogin = ['Digitalizador', 'Preparador Chefe', 'Administrador'].includes(resp.funcao);
 
-        const htmlCorpo = `
+        const html = `
+        <div id="responsavelEditTela" style="max-height: 80vh; overflow-y: auto; overflow-x: hidden; text-align: left; padding: 20px; width: 600px; max-width: 95vw; box-sizing: border-box;">
             <h2 style="margin-top:0; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">✏️ Editar Responsável</h2>
             <div class="card" style="box-shadow:none; padding:0; background: transparent;">
                 <input type="hidden" id="nomeRespEditandoModal" value="${escModal(resp.nome)}">
@@ -1296,13 +612,18 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                         </div>
                     </div>
                 </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+                    <button type="button" class="btn-sec" onclick="fecharModal()">Cancelar</button>
+                    <button type="button" class="btn-prim" onclick="salvarEdicaoResponsavelModal()">Salvar Alterações</button>
+                </div>
             </div>
+        </div>
         `;
         
-        abrirModal(htmlCorpo, {
-            wide: true,
-            footer: '<button type="button" class="btn-sec" onclick="fecharModal()">Cancelar</button><button type="button" class="btn-prim" onclick="salvarEdicaoResponsavelModal()">Salvar Alterações</button>'
-        });
+        document.getElementById("modalConteudo").innerHTML = html;
+        document.getElementById("modalConteudo").classList.add("modal-wide");
+        document.getElementById("modal").style.display = "flex";
     }
 
     async function salvarEdicaoResponsavelModal() {
@@ -1339,7 +660,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             }
         }
         
-        await salvarDB({ config: true });
+        await salvarDB();
         fecharModal();
         atualizarInterface();
     }
@@ -1362,7 +683,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
         if(confirm(`Excluir o responsável ${nome}?`)){
             db.responsaveis = db.responsaveis.filter(r => r.nome !== nome && r.apelido !== nome);
-            await salvarDB({ config: true });
+            await salvarDB();
             atualizarInterface();
         }
     }
@@ -1558,11 +879,23 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
     // ---------------- HISTÓRICO DE CAIXAS ----------------
     function garantirHistoricoCaixas(){
-        // Não é mais necessário varrer todas as caixas do índice
+        if(!db || !Array.isArray(db.caixas)) return;
+        db.caixas.forEach(c => { if(!Array.isArray(c.historico)) c.historico = []; });
     }
 
     function normalizarEliminadasELocaisAvulsos(){
-        // Não é mais necessário varrer todas as caixas do índice
+        if(!db || !Array.isArray(db.caixas)) return;
+        db.caixas.forEach(c => {
+            if(c.status === "Eliminada"){
+                c.prateleira = "";
+                c.nivel = 0;
+                c.espaco = 0;
+            } else if(!c.prateleira || !String(c.prateleira).trim() || c.status === "Avulsa"){
+                c.status = "Avulsa";
+                c.prateleira = "";
+                c.nivel = 0; c.espaco = 0;
+            }
+        });
     }
 
     function caixaOcupaSlot(c){
@@ -1982,6 +1315,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
     async function salvar(e){
         e.preventDefault();
+        await carregarDB(true);
 
         let stSalvar = document.getElementById("status").value;
         let prat = (document.getElementById("prateleiraSelect").value || "").trim();
@@ -2009,8 +1343,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         const procs = Array.from(document.querySelectorAll('input[name="procCheck"]:checked')).map(cb => cb.value);
 
         let historicoCarry = [];
-        if(edit !== null && editBoxFull){
-            const h0 = editBoxFull.historico;
+        if(edit !== null && db.caixas[edit]){
+            const h0 = db.caixas[edit].historico;
             historicoCarry = Array.isArray(h0) ? JSON.parse(JSON.stringify(h0)) : [];
         }
 
@@ -2038,8 +1372,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             if(ocupado) return alert("Esta posição já está ocupada pela caixa " + ocupado.caixa + ". Escolha outro espaço no mapa.");
         }
 
-        if(edit !== null && editBoxFull){
-            const antes = snapshotCaixaParaHistorico(editBoxFull);
+        if(edit !== null){
+            const antes = snapshotCaixaParaHistorico(db.caixas[edit]);
             const mud = extrairMudancasRegistro(antes, item);
             if(mud.length > 0)
                 item.historico.push(criarEntradaHistorico("edicao", mud, item.usuario));
@@ -2047,15 +1381,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             item.historico = [criarEntradaHistorico("criacao", mudancasIniciaisCadastro(item), item.usuario)];
         }
 
-        if(edit !== null && editBoxFull && editBoxFull.documentos){
-            item.documentos = parseInt(editBoxFull.documentos, 10) || 0;
-        }
+        if(edit !== null) db.caixas[edit] = item;
+        else db.caixas.push(item);
 
-        const shortMem = criarShortItem(item);
-        if(edit !== null) db.caixas[edit] = shortMem;
-        else db.caixas.push(shortMem);
-
-        await salvarDB({ caixas: [item], msgCarregamento: "Salvando caixa…" });
+        await salvarDB();
         limparAposSalvarSucesso();
         atualizarInterface();
     }
@@ -2183,10 +1512,9 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         if(!c) return;
 
         const html = `
-        <div id="lancamentoTela" style="text-align: left;">
+        <div id="lancamentoTela" style="max-height: 80vh; overflow-y: auto; text-align: left; padding: 10px;">
             <h2 style="margin-top:0;">📝 Editar Caixa: ${escModal(c.caixa)}</h2>
-            <form id="cadastroForm" class="modal-inner" onsubmit="salvar(event)">
-                <div class="modal-scroll-body">
+            <form id="cadastroForm" onsubmit="salvar(event)">
                 <div class="card" style="box-shadow:none; padding:0;">
                     <div class="lancamento-secao">
                         <h3>1 · Identificação e prazos</h3>
@@ -2257,17 +1585,21 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                         <h3>4 · Processos vinculados</h3>
                         <div id="processosContainer"></div>
                     </div>
-                </div>
-                </div>
-                <div class="modal-footer-actions">
-                    <button type="button" class="btn-sec" id="btnCancelar" onclick="fecharModal()">Cancelar</button>
-                    <button type="submit" class="btn-prim" id="btnSalvar">Salvar Alterações</button>
+
+                    <div class="lancamento-acoes" style="justify-content: flex-end; gap: 10px; margin-top: 20px;">
+                        <button type="button" class="btn-sec" id="btnCancelar" onclick="fecharModal()">Cancelar</button>
+                        <button type="submit" class="btn-prim" id="btnSalvar">Salvar Alterações</button>
+                    </div>
                 </div>
             </form>
         </div>
         `;
 
-        abrirModal("", { wide: true, htmlCompleto: html });
+        const mb = document.querySelector("#modal .modalBox");
+        if(mb) mb.classList.add("modal-wide");
+        
+        document.getElementById("modalConteudo").innerHTML = html;
+        document.getElementById("modal").style.display = "flex";
 
         renderSelectPrateleiras();
         renderSelectUnidades();
@@ -2277,26 +1609,23 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         preencherFormularioEdicao(i);
     }
 
-    async function preencherFormularioEdicao(i){
+    function preencherFormularioEdicao(i){
         if(typeof esconderMsgLancamentoOk === "function") esconderMsgLancamentoOk();
-        const cShort = db.caixas[i];
-        if(!cShort) return;
-        
-        editBoxFull = await carregarDetalhesCaixa(cShort.caixa, cShort.prateleira, cShort.status);
-        const c = editBoxFull || cShort;
+        const c = db.caixas[i];
+        if(!c) return;
         
         const setVal = (id, val) => { const el = document.getElementById(id); if(el) el.value = val; };
         
         setVal("caixa", c.caixa);
         setVal("unidadeSelect", c.unidade || "");
-        setVal("inicio", c.inicio || "");
-        setVal("fim", c.fim || "");
-        setVal("validade", c.validade || "");
+        setVal("inicio", c.inicio);
+        setVal("fim", c.fim);
+        setVal("validade", c.validade);
         setVal("prateleiraSelect", c.prateleira || "");
         setVal("nivel", (c.nivel && parseInt(c.nivel, 10) >= 1) ? c.nivel : "");
         setVal("espaco", (c.espaco && parseInt(c.espaco, 10) >= 1) ? c.espaco : "");
         setVal("status", c.status);
-        setVal("usuarioStatus", c.usuario || "");
+        setVal("usuarioStatus", c.usuario);
 
         document.querySelectorAll('input[name="procCheck"]').forEach(cb => {
             cb.checked = c.processos && c.processos.includes(cb.value);
@@ -2314,7 +1643,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
     function cancelarEdicao(){
         esconderMsgLancamentoOk();
         edit = null;
-        editBoxFull = null;
         document.getElementById("prateleiraSelect").disabled = false;
         const alerta = document.getElementById("alertaStatusLanc");
         if(alerta) alerta.style.display = "none";
@@ -2333,9 +1661,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
     async function remover(i){
         if(confirm("Excluir esta caixa?")){
-            const cShort = db.caixas[i];
             db.caixas.splice(i, 1);
-            await salvarDB({ removerCaixas: [cShort] });
+            await salvarDB();
             atualizarInterface();
         }
     }
@@ -2431,36 +1758,29 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         if(ham) ham.classList.toggle("active");
     }
 
-    async function detalhes(i){
-        const cShort = db.caixas[i];
-        if(!cShort) return;
-        mostrarCarregamento("Carregando detalhes…");
-        let c;
-        try {
-            c = await carregarDetalhesCaixa(cShort.caixa, cShort.prateleira, cShort.status) || cShort;
-        } finally {
-            esconderCarregamento();
-        }
+    function detalhes(i){
+        const c = db.caixas[i];
         const procs = c.processos ? c.processos.join(", ") : "Nenhum";
-        const docs = parseInt(c.documentos, 10) || 0;
-        abrirModal(`
+        const mb = document.querySelector("#modal .modalBox");
+        if(mb) mb.classList.add("modal-wide");
+        document.getElementById("modalConteudo").innerHTML = `
             <h3>Caixa: ${escModal(c.caixa)}</h3>
             <p><b>Unidade:</b> ${escModal(c.unidade || "—")}</p>
             <p><b>Processos:</b> ${escModal(procs)}</p>
             <p><b>Local:</b> ${escModal(formatarLocalCaixa(c))}</p>
             <p><b>Status:</b> ${escModal(c.status)}</p>
             <p><b>Validade:</b> ${escModal(c.validade)}</p>
-            <p><b>Documentos:</b> ${docs.toLocaleString('pt-BR')}</p>
             <p><b>Responsável:</b> ${escModal(c.usuario)}</p>
             <p><small>Última atualização: ${escModal(c.dataUpdate || "N/A")}</small></p>
             <h4 style="margin:16px 0 6px 0;font-size:14px;color:#2c3e50;">Histórico</h4>
             <div class="historico-caixa">${renderHtmlHistorico(c)}</div>
-        `, { wide: true, footer: '<button type="button" class="btn-prim" onclick="fecharModal()">Fechar</button>' });
+            <hr>
+            <button onclick="fecharModal()">Fechar</button>
+        `;
+        document.getElementById("modal").style.display = "flex";
     }
     function fecharModal(){
         document.getElementById("modal").style.display = "none";
-        const conteudo = document.getElementById("modalConteudo");
-        if(conteudo) conteudo.innerHTML = "";
         const mb = document.querySelector("#modal .modalBox");
         if(mb) mb.classList.remove("modal-wide");
         if(window.ERP_PAGE_ID === "index") edit = null;
@@ -2845,12 +2165,11 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         
         let totalDocs = 0;
         filtradas.forEach(c => {
-            totalDocs += parseInt(c.documentos, 10) || 0;
+            if (c.documentos) totalDocs += parseInt(c.documentos, 10);
         });
 
         const numDigitalizadores = (db.responsaveis || []).filter(r => r.funcao === "Digitalizador" || r.funcao === "Administrador").length;
         const mediaPorDig = numDigitalizadores > 0 ? Math.round(totalDocs / numDigitalizadores) : 0;
-        const mediaPorCaixa = filtradas.length > 0 ? Math.round(totalDocs / filtradas.length) : 0;
 
         el.innerHTML = `
             <div class="kpi-card">
@@ -2869,19 +2188,14 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 <div class="kpi-sub">Vencidas · <span style="color:#f39c12; font-weight:bold;">${vence30}</span> a vencer em 30 dias</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-lbl">Total de Documentos</div>
-                <div class="kpi-val" id="kpiTotalDocs">0</div>
-                <div class="kpi-sub">Soma registrada nas caixas filtradas</div>
+                <div class="kpi-lbl">Total de Docs.</div>
+                <div class="kpi-val" id="kpiMediaDocs">0</div>
+                <div class="kpi-sub">Soma de documentos registrados nas caixas</div>
             </div>
             <div class="kpi-card">
-                <div class="kpi-lbl">Média Docs / Caixa</div>
-                <div class="kpi-val" id="kpiMediaCaixa">0</div>
-                <div class="kpi-sub">Média entre as ${filtradas.length.toLocaleString('pt-BR')} caixa(s) do filtro</div>
-            </div>
-            <div class="kpi-card">
-                <div class="kpi-lbl">Média Docs / Digitalizador</div>
+                <div class="kpi-lbl">Média de Docs por Dig.</div>
                 <div class="kpi-val" id="kpiMediaPorDig">0</div>
-                <div class="kpi-sub">Ref: ${numDigitalizadores} digitalizador(es) cadastrado(s)</div>
+                <div class="kpi-sub">Ref: ${numDigitalizadores} digitalizador(es) ativo(s)</div>
             </div>
             <div class="kpi-card" style="flex:2; min-width:280px;">
                 <div class="kpi-lbl">Distribuição Atual</div>
@@ -2895,8 +2209,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             const objOcupacao = document.getElementById("kpiOcupacao");
             if(objOcupacao) objOcupacao.innerHTML = cap ? pctOcup + "%" : "—";
             animarNumeros("kpiVencidas", vencidas, 1000);
-            animarNumeros("kpiTotalDocs", totalDocs, 1000);
-            animarNumeros("kpiMediaCaixa", mediaPorCaixa, 1000);
+            animarNumeros("kpiMediaDocs", totalDocs, 1000);
             animarNumeros("kpiMediaPorDig", mediaPorDig, 1000);
         }, 100);    }
 
@@ -2909,18 +2222,13 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         montarChart("chartDashboard2", "dashDim2", "dashTipo2", filtradas);
     }
 
-    function renderDashboardDadosDebounced(){
-        clearTimeout(_dashDebounceTimer);
-        _dashDebounceTimer = setTimeout(renderDashboardDados, 280);
-    }
-
     function atualizarDashboard(){
         if(!document.getElementById("dashBusca")) return;
         renderDashboardDados();
     }
 
     (function initDashboardUI(){
-        const reagir = ["dashDim1","dashTipo1","dashDim2","dashTipo2","dashMetrica1","dashMetrica2"];
+        const reagir = ["dashDim1","dashTipo1","dashDim2","dashTipo2"];
         reagir.forEach(id => {
             const n = document.getElementById(id);
             if(n) n.addEventListener("change", () => {
@@ -2930,7 +2238,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         const busca = document.getElementById("dashBusca");
         if(busca) {
             busca.addEventListener("input", () => {
-                renderDashboardDadosDebounced();
+                renderDashboardDados();
             });
         }
     })();
@@ -2977,20 +2285,16 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
     }
 
     async function alocarTudoAutomatico() {
-        const avulsasShort = db.caixas.filter(c => c.status === "Avulsa" && (!c.prateleira || !c.prateleira.trim()) && c.status !== "Eliminada");
+        const avulsas = db.caixas.filter(c => c.status === "Avulsa" && (!c.prateleira || !c.prateleira.trim()) && c.status !== "Eliminada");
 
-        if (avulsasShort.length === 0) return alert("Não há caixas avulsas para alocar.");
+        if (avulsas.length === 0) return alert("Não há caixas avulsas para alocar.");
         if (db.prateleiras.length === 0) return alert("Cadastre ao menos uma prateleira primeiro.");
 
-        mostrarCarregamento("Alocando caixas…");
         let alocadasCont = 0;
         let logs = [];
-        const caixasModificadas = [];
 
-        for (let cShort of avulsasShort) {
+        for (let c of avulsas) {
             let alocada = false;
-            let c = await carregarDetalhesCaixa(cShort.caixa, cShort.prateleira, cShort.status) || cShort;
-            
             for (let p of db.prateleiras) {
                 for (let n = 1; n <= 13; n++) {
                     for (let e = 1; e <= 6; e++) {
@@ -3004,13 +2308,11 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                             c.dataUpdate = new Date().toLocaleString();
                             
                             const mudanca = [{ campo: "localizacao", label: "Localização", de: antesLocal, para: formatarLocalCaixa(c) }];
-                            if(!Array.isArray(c.historico)) c.historico = [];
                             c.historico.push(criarEntradaHistorico("edicao", mudanca, "Sistema (Auto)"));
                             
                             logs.push(`Caixa ${c.caixa} -> ${p.nome} (N${n}-S${e})`);
                             alocada = true;
                             alocadasCont++;
-                            caixasModificadas.push(c);
                             break;
                         }
                     }
@@ -3022,15 +2324,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         }
 
         if (alocadasCont > 0) {
-            try {
-                await salvarDB({ caixas: caixasModificadas, msgCarregamento: "Salvando alocações…" });
-                atualizarInterface();
-                alert(`Sucesso! ${alocadasCont} caixa(s) foram alocadas automaticamente.`);
-            } finally {
-                esconderCarregamento();
-            }
+            await salvarDB();
+            atualizarInterface();
+            alert(`Sucesso! ${alocadasCont} caixa(s) foram alocadas automaticamente.`);
         } else {
-            esconderCarregamento();
             alert("Não foi possível alocar. Verifique se há espaço disponível nas prateleiras.");
         }
     }
@@ -3047,7 +2344,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         const caixasComLocal = db.caixas
             .filter(c => {
                 const temLocal = c.prateleira && c.prateleira.trim() !== "";
-                return temLocal && c.status !== "Eliminada";
+                const foiAlocada = c.historico && c.historico.some(h => 
+                    h.mudancas && h.mudancas.some(m => m.campo === "localizacao" && (m.de === "Avulsa" || m.de === "Avulsa (sem prateleira)"))
+                );
+                return temLocal && foiAlocada && c.status !== "Eliminada";
             })
             .sort((a, b) => (a.prateleira || "").localeCompare(b.prateleira || "") || a.nivel - b.nivel || a.espaco - b.espaco);
 
@@ -3065,12 +2365,12 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             </tr>`;
         });
 
-        html += `</tbody></table>`;
+        html += `</tbody></table><br><button onclick="window.print()">Imprimir Relatório</button> <button onclick="fecharModal()">Fechar</button>`;
         
-        abrirModal(html, {
-            wide: true,
-            footer: '<button type="button" class="btn-sec" onclick="window.print()">Imprimir Relatório</button><button type="button" class="btn-prim" onclick="fecharModal()">Fechar</button>'
-        });
+        const mb = document.querySelector("#modal .modalBox");
+        if(mb) mb.classList.add("modal-wide");
+        document.getElementById("modalConteudo").innerHTML = html;
+        document.getElementById("modal").style.display = "flex";
     }
 
     // ---------------- PAGINAÇÃO ----------------
@@ -3396,9 +2696,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         msg.textContent = "Processando... aguarde.";
 
         try {
+            await carregarDB(true);
+
             let alteradas = 0;
             let naoEncontradas = [];
-            const caixasModificadas = [];
 
             for (const numCaixa of caixasSelecionadasParaPreparo) {
                 const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
@@ -3408,8 +2709,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     continue;
                 }
 
-                const caixaShort = db.caixas[idx];
-                const caixa = await carregarDetalhesCaixa(caixaShort.caixa, caixaShort.prateleira, caixaShort.status) || caixaShort;
+                const caixa = db.caixas[idx];
                 const antes = snapshotCaixaParaHistorico(caixa);
 
                 caixa.status = "Preparada";
@@ -3428,12 +2728,11 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     
                     caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
                 }
-                caixasModificadas.push(caixa);
                 alteradas++;
             }
 
             if (alteradas > 0) {
-                await salvarDB({ caixas: caixasModificadas });
+                await salvarDB();
                 if (typeof confetti === 'function') {
                     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
                 }
@@ -3564,6 +2863,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 msg.textContent = "Processando registro avulso de documentos... aguarde.";
 
                 try {
+                    await carregarDB(true);
+                    
                     const nomeCaixaAvulsa = `[Avulso] - Doc. ${new Date().getTime().toString().slice(-6)}`;
                     const novaCaixa = {
                         caixa: nomeCaixaAvulsa,
@@ -3607,7 +2908,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     });
 
                     db.caixas.push(novaCaixa);
-                    await salvarDB({ caixas: [novaCaixa] });
+                    await salvarDB();
                     
                     if (typeof confetti === 'function') {
                         confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
@@ -3638,6 +2939,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         msg.textContent = "Processando... aguarde.";
 
         try {
+            await carregarDB(true);
+
             let alteradas = 0;
             let naoEncontradas = [];
 
@@ -3648,7 +2951,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 docsPorCaixa = Math.round(totalDocs / caixasSelecionadasParaDigitalizar.length);
             }
 
-            const caixasModificadas = [];
             for (const numCaixa of caixasSelecionadasParaDigitalizar) {
                 const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
 
@@ -3657,8 +2959,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     continue;
                 }
 
-                const caixaShort = db.caixas[idx];
-                const caixa = await carregarDetalhesCaixa(caixaShort.caixa, caixaShort.prateleira, caixaShort.status) || caixaShort;
+                const caixa = db.caixas[idx];
                 const antes = snapshotCaixaParaHistorico(caixa);
 
                 caixa.status = "Digitalizada";
@@ -3684,12 +2985,11 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
                     caixa.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
                 }
-                caixasModificadas.push(caixa);
                 alteradas++;
             }
 
             if (alteradas > 0) {
-                await salvarDB({ caixas: caixasModificadas });
+                await salvarDB();
                 if (typeof confetti === 'function') {
                     confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
                 }
@@ -4092,9 +3392,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             uLogadoNome = (u && u.nome) ? u.nome : "Administrador";
         } catch(e) {}
 
-        const caixasSelecionadasFull = [];
-        for (let cShort of caixasSelecionadas) {
-            const c = await carregarDetalhesCaixa(cShort.caixa, cShort.prateleira, cShort.status) || cShort;
+        for (let c of caixasSelecionadas) {
             const antes = snapshotCaixaParaHistorico(c);
             
             c.usuario = dig;
@@ -4105,7 +3403,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 if (!Array.isArray(c.historico)) c.historico = [];
                 c.historico.push(criarEntradaHistorico("edicao", mud, uLogadoNome));
             }
-            caixasSelecionadasFull.push(c);
             alteradas++;
         }
 
@@ -4119,7 +3416,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         };
         db.relacoes.push(novaRelacao);
 
-        await salvarDB({ config: true, relacaoNova: novaRelacao, caixas: caixasSelecionadasFull });
+        await salvarDB();
         
         msg.style.color = "#27ae60";
         msg.textContent = `Relação gerada com sucesso! ${alteradas} caixas atribuídas a ${dig}.`;
@@ -4135,7 +3432,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 <thead><tr><th>Caixa</th><th>Unidade</th><th>Localização</th><th>Data de Criação</th></tr></thead>
                 <tbody>`;
         
-        caixasSelecionadasFull.forEach(c => {
+        caixasSelecionadas.forEach(c => {
             let dataCriacao = "—";
             if (Array.isArray(c.historico) && c.historico.length > 0) {
                 const criacaoHist = c.historico.find(h => h.tipo === "criacao" || h.acao === "criacao");
@@ -4504,6 +3801,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         atualizarProgressoImport(0, "Carregando base…");
 
         try {
+            await carregarDB(true);
+
             const registradoPor = obterUsuarioImportacao();
             const indiceCaixas = construirIndiceCaixasExistentes();
             const slotsOcupados = construirMapaSlotsOcupados();
@@ -4512,7 +3811,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             let importadas = 0;
             let atualizadas = 0;
             let puladas = 0;
-            const caixasModificadasNoImport = [];
             const erros = [];
             const total = _importLinhasParsed.length;
             const LOTE = 80;
@@ -4555,9 +3853,10 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 }
 
                 if (idxExistente >= 0) {
-                    const antesFull = await carregarDetalhesCaixa(db.caixas[idxExistente].caixa, db.caixas[idxExistente].prateleira, db.caixas[idxExistente].status);
-                    const antes = antesFull ? snapshotCaixaParaHistorico(antesFull) : snapshotCaixaParaHistorico(db.caixas[idxExistente]);
-                    item.historico = antesFull ? (antesFull.historico || []) : [];
+                    const antes = snapshotCaixaParaHistorico(db.caixas[idxExistente]);
+                    const historicoAnt = Array.isArray(db.caixas[idxExistente].historico)
+                        ? JSON.parse(JSON.stringify(db.caixas[idxExistente].historico)) : [];
+                    item.historico = historicoAnt;
                     const mud = extrairMudancasRegistro(antes, item);
                     if (mud.length > 0)
                         item.historico.push(criarEntradaHistorico("edicao", mud, registradoPor));
@@ -4567,7 +3866,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     db.caixas[idxExistente] = item;
                     if (caixaOcupaSlot(item))
                         slotsOcupados.set(chaveSlotImport(item.prateleira, item.nivel, item.espaco), item.caixa);
-                    caixasModificadasNoImport.push(item);
                     atualizadas++;
                 } else {
                     item.historico = [criarEntradaHistorico("criacao", mudancasIniciaisCadastro(item), registradoPor)];
@@ -4575,7 +3873,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     indiceCaixas.set(chaveCaixa, db.caixas.length - 1);
                     if (caixaOcupaSlot(item))
                         slotsOcupados.set(chaveSlotImport(item.prateleira, item.nivel, item.espaco), item.caixa);
-                    caixasModificadasNoImport.push(item);
                     importadas++;
                 }
 
@@ -4589,7 +3886,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
             atualizarProgressoImport(92, "Gravando banco…");
             _cacheHashCaixas = "";
-            await salvarDB({ caixas: caixasModificadasNoImport });
+            await salvarDB();
             atualizarProgressoImport(100, "Concluído");
 
             if (resumo) {
