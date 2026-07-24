@@ -140,11 +140,11 @@
             <div class="card chart-card">
                 <h4>Gráfico A</h4>
                 <div class="chart-controls">
-                    <label>Métrica <select id="dashMetrica1">
+                    <label>Métrica <select id="dashMetrica1" onchange="if(window.atualizarDashboard) window.atualizarDashboard()">
                         <option value="caixas">Qtd. de Caixas</option>
                         <option value="documentos">Qtd. de Documentos</option>
                     </select></label>
-                    <label>Dimensão <select id="dashDim1">
+                    <label>Dimensão <select id="dashDim1" onchange="if(window.atualizarDashboard) window.atualizarDashboard()">
                         <option value="status">Por status</option>
                         <option value="prateleira">Por prateleira</option>
                         <option value="processo">Por processo (top 12)</option>
@@ -154,7 +154,7 @@
                         <option value="mes_validade">Por mês da validade</option>
                         <option value="mes_alteracao">Por mês de alteração</option>
                     </select></label>
-                    <label>Tipo <select id="dashTipo1">
+                    <label>Tipo <select id="dashTipo1" onchange="if(window.atualizarDashboard) window.atualizarDashboard()">
                         <option value="bar">Barras</option>
                         <option value="pie">Pizza</option>
                         <option value="doughnut">Rosca</option>
@@ -167,21 +167,21 @@
             <div class="card chart-card">
                 <h4>Gráfico B</h4>
                 <div class="chart-controls">
-                    <label>Métrica <select id="dashMetrica2">
+                    <label>Métrica <select id="dashMetrica2" onchange="if(window.atualizarDashboard) window.atualizarDashboard()">
                         <option value="caixas">Qtd. de Caixas</option>
                         <option value="documentos">Qtd. de Documentos</option>
                     </select></label>
-                    <label>Dimensão <select id="dashDim2">
+                    <label>Dimensão <select id="dashDim2" onchange="if(window.atualizarDashboard) window.atualizarDashboard()">
+                        <option value="usuario">Por responsável</option>
                         <option value="prateleira">Por prateleira</option>
                         <option value="status">Por status</option>
                         <option value="processo">Por processo (top 12)</option>
                         <option value="nivel">Por nível (1–13)</option>
-                        <option value="usuario">Por responsável</option>
                         <option value="unidade">Por unidade</option>
                         <option value="mes_validade">Por mês da validade</option>
                         <option value="mes_alteracao">Por mês de alteração</option>
                     </select></label>
-                    <label>Tipo <select id="dashTipo2">
+                    <label>Tipo <select id="dashTipo2" onchange="if(window.atualizarDashboard) window.atualizarDashboard()">
                         <option value="doughnut">Rosca</option>
                         <option value="bar">Barras</option>
                         <option value="pie">Pizza</option>

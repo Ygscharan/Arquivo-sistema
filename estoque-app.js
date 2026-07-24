@@ -868,8 +868,39 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 db.processos = configParsed.processos || [];
                 db.unidades = configParsed.unidades || [];
                 db.responsaveis = configParsed.responsaveis || [];
-                db.relacoes = configParsed.relacoes || [];
+                // Deduplicar relações para remover duplicatas que podem ter sido geradas pelo bug anterior
+                const dedupRelacoes = [];
+                const idsRelMap = new Set();
+                (configParsed.relacoes || []).forEach(r => {
+                    if (!idsRelMap.has(r.id)) {
+                        idsRelMap.add(r.id);
+                        dedupRelacoes.push(r);
+                    }
+                });
+                db.relacoes = dedupRelacoes;
                 
+                // Auto-recuperação de relações antigas (do backup do banco monolithic)
+                try {
+                    const hBackup = await pastaHandle.getFileHandle("banco_erp_backup.json", { create: false });
+                    const backupFile = await hBackup.getFile();
+                    const backupDb = JSON.parse(await backupFile.text());
+                    if (backupDb && backupDb.relacoes) {
+                        let resgatadas = false;
+                        backupDb.relacoes.forEach(oldRel => {
+                            if (!db.relacoes.some(r => r.id === oldRel.id)) {
+                                db.relacoes.push(oldRel);
+                                resgatadas = true;
+                            }
+                        });
+                        if (resgatadas) {
+                            // Reordena para ficar cronológico (as mais recentes no final ou as antigas primeiro, depois no render inverte)
+                            db.relacoes.sort((a,b) => new Date(a.dataISO) - new Date(b.dataISO));
+                            // Vamos regravar o config file para salvar essas resgatadas de vez (fora do ciclo read-only)
+                            setTimeout(() => salvarDB({ config: true, semOverlay: true }), 2000);
+                        }
+                    }
+                } catch(e) { }
+
                 configMetadata.size = fileConfig.size;
                 configMetadata.lastModified = fileConfig.lastModified;
             }
@@ -933,9 +964,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     responsaveis: db.responsaveis,
                     relacoes: db.relacoes || []
                 };
-                if (opcoes.relacaoNova) {
-                    configParsed.relacoes.push(opcoes.relacaoNova);
-                }
 
                 const fileConfigHandle = await pastaHandle.getFileHandle("config_erp.json", { create: true });
                 const writableConfig = await fileConfigHandle.createWritable();
@@ -945,7 +973,6 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 const fileConfigNew = await fileConfigHandle.getFile();
                 configMetadata.size = fileConfigNew.size;
                 configMetadata.lastModified = fileConfigNew.lastModified;
-                db.relacoes = configParsed.relacoes;
             }
 
             if (opcoes.caixas || opcoes.removerCaixas) {
@@ -2460,9 +2487,15 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
     function fecharModal(){
         document.getElementById("modal").style.display = "none";
         const conteudo = document.getElementById("modalConteudo");
-        if(conteudo) conteudo.innerHTML = "";
+        if(conteudo) {
+            conteudo.innerHTML = "";
+            conteudo.style.padding = "";
+        }
         const mb = document.querySelector("#modal .modalBox");
-        if(mb) mb.classList.remove("modal-wide");
+        if(mb) {
+            mb.classList.remove("modal-wide");
+            mb.style.padding = "";
+        }
         if(window.ERP_PAGE_ID === "index") edit = null;
     }
 
@@ -2850,7 +2883,8 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
 
         const numDigitalizadores = (db.responsaveis || []).filter(r => r.funcao === "Digitalizador" || r.funcao === "Administrador").length;
         const mediaPorDig = numDigitalizadores > 0 ? Math.round(totalDocs / numDigitalizadores) : 0;
-        const mediaPorCaixa = filtradas.length > 0 ? Math.round(totalDocs / filtradas.length) : 0;
+        const caixasComDocs = filtradas.filter(c => (parseInt(c.documentos, 10) || 0) > 0);
+        const mediaPorCaixa = caixasComDocs.length > 0 ? Math.round(totalDocs / caixasComDocs.length) : 0;
 
         el.innerHTML = `
             <div class="kpi-card">
@@ -2876,7 +2910,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             <div class="kpi-card">
                 <div class="kpi-lbl">Média Docs / Caixa</div>
                 <div class="kpi-val" id="kpiMediaCaixa">0</div>
-                <div class="kpi-sub">Média entre as ${filtradas.length.toLocaleString('pt-BR')} caixa(s) do filtro</div>
+                <div class="kpi-sub">Média entre as ${caixasComDocs.length.toLocaleString('pt-BR')} caixa(s) com documentos</div>
             </div>
             <div class="kpi-card">
                 <div class="kpi-lbl">Média Docs / Digitalizador</div>
@@ -3642,14 +3676,19 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             let naoEncontradas = [];
 
             const qtdDocsInput = document.getElementById("digQtdDocs");
-            let docsPorCaixa = 0;
+            let baseDocs = 0;
+            let remainder = 0;
             if (qtdDocsInput && qtdDocsInput.value) {
                 const totalDocs = parseInt(qtdDocsInput.value, 10);
-                docsPorCaixa = Math.round(totalDocs / caixasSelecionadasParaDigitalizar.length);
+                const boxCount = caixasSelecionadasParaDigitalizar.length;
+                baseDocs = Math.floor(totalDocs / boxCount);
+                remainder = totalDocs % boxCount;
             }
 
             const caixasModificadas = [];
-            for (const numCaixa of caixasSelecionadasParaDigitalizar) {
+            // Distribute documents evenly across selected boxes
+            for (let i = 0; i < caixasSelecionadasParaDigitalizar.length; i++) {
+                const numCaixa = caixasSelecionadasParaDigitalizar[i];
                 const idx = db.caixas.findIndex(c => c.caixa.toLowerCase() === numCaixa.toLowerCase());
 
                 if (idx === -1) {
@@ -3661,16 +3700,19 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                 const caixa = await carregarDetalhesCaixa(caixaShort.caixa, caixaShort.prateleira, caixaShort.status) || caixaShort;
                 const antes = snapshotCaixaParaHistorico(caixa);
 
+                // Determine documents for this box
+                const docsForBox = baseDocs + (i < remainder ? 1 : 0);
+
                 caixa.status = "Digitalizada";
                 caixa.usuario = funcionario;
                 caixa.dataUpdate = new Date().toLocaleString();
-                if (docsPorCaixa > 0) {
-                    caixa.documentos = (caixa.documentos || 0) + docsPorCaixa;
+                if (docsForBox > 0) {
+                    caixa.documentos = (caixa.documentos || 0) + docsForBox;
                 }
 
                 const mud = extrairMudancasRegistro(antes, caixa);
-                if (docsPorCaixa > 0) {
-                    mud.push({ campo: "documentos", label: "Qtd. Documentos", de: "0", para: String(docsPorCaixa) });
+                if (docsForBox > 0) {
+                    mud.push({ campo: "documentos", label: "Qtd. Documentos", de: "0", para: String(docsForBox) });
                 }
 
                 if (mud.length > 0) {
@@ -4007,19 +4049,12 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         renderizarHistoricoRelacoes(true);
     }
 
-    window.visualizarRelacao = function(id) {
+    window.imprimirRelacao = function(id) {
         const rel = db.relacoes.find(r => r.id === id);
         if (!rel) return;
-
-        let html = `<h3>Relação de Caixas para Digitalização</h3>
-            <p><strong>Digitalizador Destino:</strong> ${rel.digitalizador}</p>
-            <p><strong>Processo:</strong> ${rel.processo}</p>
-            <p><strong>Data:</strong> ${new Date(rel.dataISO).toLocaleDateString()}</p>
-            <table class="tabela">
-                <thead><tr><th>Caixa</th><th>Unidade</th><th>Localização</th><th>Data de Criação</th></tr></thead>
-                <tbody>`;
-
+        
         const caixasLista = Array.isArray(rel.caixas) ? rel.caixas : [];
+        let trs = "";
         caixasLista.forEach(numeroCaixa => {
             const c = db.caixas.find(cx => cx.caixa === numeroCaixa);
             let dataCriacao = "—";
@@ -4031,8 +4066,7 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
                     dataCriacao = new Date(c.historico[0].quandoISO).toLocaleString("pt-BR");
                 }
             }
-
-            html += `<tr>
+            trs += `<tr>
                 <td>${numeroCaixa}</td>
                 <td>${c ? (c.unidade || '—') : '—'}</td>
                 <td>${c ? formatarLocalCaixa(c) : '—'}</td>
@@ -4040,15 +4074,146 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
             </tr>`;
         });
 
-        html += `</tbody></table><br>
-        <div style="margin-top:20px;">
-            <button onclick="window.print()" style="padding:10px 15px; background:#3498db; color:#fff; border:none; border-radius:4px; cursor:pointer;">Imprimir Relação</button> 
-            <button onclick="fecharModal()" style="padding:10px 15px; background:#7f8c8d; color:#fff; border:none; border-radius:4px; cursor:pointer;">Fechar</button>
+        const htmlPrint = `
+            <h3>Relação de Caixas para Digitalização</h3>
+            <p><strong>Digitalizador Destino:</strong> ${rel.digitalizador}</p>
+            <p><strong>Processo:</strong> ${rel.processo}</p>
+            <p><strong>Data de Geração:</strong> ${new Date(rel.dataISO).toLocaleString()}</p>
+            <table class="tabela">
+                <thead><tr><th>Caixa</th><th>Unidade</th><th>Localização</th><th>Data de Criação</th></tr></thead>
+                <tbody>${trs}</tbody>
+            </table>
+        `;
+        
+        const win = window.open("", "_blank");
+        win.document.write(`
+            <html>
+            <head>
+                <title>Impressão de Relação</title>
+                <style>
+                    body { font-family: sans-serif; padding: 20px; color: #333; }
+                    .tabela { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+                    .tabela th, .tabela td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+                    .tabela th { background: #f4f4f4; }
+                </style>
+            </head>
+            <body onload="window.print(); window.close();">
+                ${htmlPrint}
+            </body>
+            </html>
+        `);
+    };
+
+    window.visualizarRelacao = function(id) {
+        const rel = db.relacoes.find(r => r.id === id);
+        if (!rel) return;
+
+        const caixasLista = Array.isArray(rel.caixas) ? rel.caixas : [];
+        let trs = "";
+        
+        caixasLista.forEach(numeroCaixa => {
+            const c = db.caixas.find(cx => cx.caixa === numeroCaixa);
+            let dataCriacao = "—";
+            if (c && Array.isArray(c.historico) && c.historico.length > 0) {
+                const criacaoHist = c.historico.find(h => h.tipo === "criacao" || h.acao === "criacao");
+                if (criacaoHist && criacaoHist.quandoISO) {
+                    dataCriacao = new Date(criacaoHist.quandoISO).toLocaleString("pt-BR");
+                } else if (c.historico[0].quandoISO) {
+                    dataCriacao = new Date(c.historico[0].quandoISO).toLocaleString("pt-BR");
+                }
+            }
+            trs += `<tr style="transition: all 0.2s; border-bottom: 1px solid #edf2f7;">
+                <td style="padding: 12px 20px; color: #2d3748; font-weight: 500;">${numeroCaixa}</td>
+                <td style="padding: 12px 20px; color: #4a5568;">${c ? (c.unidade || '—') : '—'}</td>
+                <td style="padding: 12px 20px; color: #4a5568;">${c ? formatarLocalCaixa(c) : '—'}</td>
+                <td style="padding: 12px 20px; color: #718096; font-size: 13px;">${dataCriacao}</td>
+            </tr>`;
+        });
+
+        let html = `
+        <div class="modal-inner" style="background: #f8fafc;">
+            <div class="modal-scroll-body" style="padding: 30px; overflow-x: hidden;">
+                
+                <!-- Cabeçalho Bonito -->
+                <div style="display:flex; align-items:center; gap:16px; margin-bottom: 30px; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid #e2e8f0;">
+                    <div style="width: 56px; height: 56px; background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4);">
+                        <i class="fas fa-file-invoice"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin:0; font-size: 22px; color: #1e293b; font-weight: 700;">Guia de Relação de Caixas</h3>
+                        <p style="margin: 4px 0 0 0; font-size: 14px; color: #64748b;">Acompanhamento de caixas para digitalização</p>
+                    </div>
+                </div>
+
+                <!-- Grid de Informações -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 30px;">
+                    <div style="background: #fff; padding: 16px 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px;">Digitalizador</span>
+                        <div style="font-size: 16px; color: #0f172a; font-weight: 600; margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-user-circle" style="color: #cbd5e1;"></i> ${rel.digitalizador}
+                        </div>
+                    </div>
+                    <div style="background: #fff; padding: 16px 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px;">Processo</span>
+                        <div style="font-size: 16px; color: #0f172a; font-weight: 600; margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-folder-open" style="color: #cbd5e1;"></i> ${rel.processo}
+                        </div>
+                    </div>
+                    <div style="background: #fff; padding: 16px 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px;">Data de Geração</span>
+                        <div style="font-size: 16px; color: #0f172a; font-weight: 600; margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-calendar-alt" style="color: #cbd5e1;"></i> ${new Date(rel.dataISO).toLocaleString()}
+                        </div>
+                    </div>
+                    <div style="background: #fff; padding: 16px 20px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+                        <span style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px;">Total de Caixas</span>
+                        <div style="font-size: 16px; color: #0f172a; font-weight: 600; margin-top: 6px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-box" style="color: #cbd5e1;"></i> ${caixasLista.length} un.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabela de Caixas -->
+                <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                            <thead>
+                                <tr style="background: #f1f5f9; border-bottom: 2px solid #e2e8f0;">
+                                    <th style="padding: 16px 20px; color: #475569; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Caixa</th>
+                                    <th style="padding: 16px 20px; color: #475569; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Unidade</th>
+                                    <th style="padding: 16px 20px; color: #475569; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Localização</th>
+                                    <th style="padding: 16px 20px; color: #475569; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px;">Data de Criação</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${trs}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+            
+            <!-- Ações do Modal -->
+            <div class="modal-footer-actions" style="background: #fff; border-top: 1px solid #e2e8f0; padding: 20px 30px;">
+                <button onclick="fecharModal()" class="btn-sec" style="padding: 12px 24px; font-weight: 600; color: #64748b; background: #f1f5f9; border: none; border-radius: 8px; transition: all 0.2s;">
+                    Cancelar
+                </button>
+                <button onclick="window.imprimirRelacao('${id}')" class="btn-prim" style="padding: 12px 24px; font-weight: 600; background: linear-gradient(135deg, #10b981, #059669); color: #fff; border: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(16,185,129,0.3); display: flex; align-items: center; gap: 8px; transition: all 0.2s;">
+                    <i class="fas fa-print"></i> Imprimir Guia
+                </button>
+            </div>
         </div>`;
 
         const mb = document.querySelector("#modal .modalBox");
-        if (mb) mb.classList.add("modal-wide");
-        document.getElementById("modalConteudo").innerHTML = html;
+        if (mb) {
+            mb.classList.add("modal-wide");
+            mb.style.padding = "0"; // Remove padding raw para preencher totalmente com inner
+        }
+        
+        const content = document.getElementById("modalConteudo");
+        content.style.padding = "0"; // Remove padding raw para preencher totalmente
+        content.innerHTML = html;
         document.getElementById("modal").style.display = "flex";
     };
 
@@ -4119,50 +4284,15 @@ let db = { caixas: [], prateleiras: [], processos: [], unidades: [], responsavei
         };
         db.relacoes.push(novaRelacao);
 
-        await salvarDB({ config: true, relacaoNova: novaRelacao, caixas: caixasSelecionadasFull });
+        await salvarDB({ config: true, caixas: caixasSelecionadasFull });
         
         msg.style.color = "#27ae60";
         msg.textContent = `Relação gerada com sucesso! ${alteradas} caixas atribuídas a ${dig}.`;
         
         renderizarHistoricoRelacoes(true);
 
-        // Gerar relatório para impressão
-        let html = `<h3>Relação de Caixas para Digitalização</h3>
-            <p><strong>Digitalizador Destino:</strong> ${dig}</p>
-            <p><strong>Processo:</strong> ${proc}</p>
-            <p><strong>Data:</strong> ${new Date().toLocaleDateString()}</p>
-            <table class="tabela">
-                <thead><tr><th>Caixa</th><th>Unidade</th><th>Localização</th><th>Data de Criação</th></tr></thead>
-                <tbody>`;
-        
-        caixasSelecionadasFull.forEach(c => {
-            let dataCriacao = "—";
-            if (Array.isArray(c.historico) && c.historico.length > 0) {
-                const criacaoHist = c.historico.find(h => h.tipo === "criacao" || h.acao === "criacao");
-                if (criacaoHist && criacaoHist.quandoISO) {
-                    dataCriacao = new Date(criacaoHist.quandoISO).toLocaleString("pt-BR");
-                } else if (c.historico[0].quandoISO) {
-                    dataCriacao = new Date(c.historico[0].quandoISO).toLocaleString("pt-BR");
-                }
-            }
-            
-            html += `<tr>
-                <td>${c.caixa}</td>
-                <td>${c.unidade || '—'}</td>
-                <td>${formatarLocalCaixa(c)}</td>
-                <td>${dataCriacao}</td>
-            </tr>`;
-        });
-        
-        html += `</tbody></table><br>
-        <div style="margin-top:20px;">
-            <button onclick="window.print()" style="padding:10px 15px; background:#3498db; color:#fff; border:none; border-radius:4px; cursor:pointer;">Imprimir Relação</button> 
-            <button onclick="fecharModal()" style="padding:10px 15px; background:#7f8c8d; color:#fff; border:none; border-radius:4px; cursor:pointer;">Fechar</button>
-        </div>`;
-        const mb = document.querySelector("#modal .modalBox");
-        if(mb) mb.classList.add("modal-wide");
-        document.getElementById("modalConteudo").innerHTML = html;
-        document.getElementById("modal").style.display = "flex";
+        // Exibe o modal moderno já padronizado
+        window.visualizarRelacao(novaRelacao.id);
 
         // Reset
         document.getElementById("relProcessoSelect").value = "";
